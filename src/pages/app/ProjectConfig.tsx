@@ -31,6 +31,14 @@ interface Project {
 
 type SourceType = 'sheet' | 'meta_ads' | null;
 
+interface GoogleAdsCustomerOption {
+  id: string;
+  name: string;
+  currencyCode?: string | null;
+  timeZone?: string | null;
+  loginCustomerId?: string | null;
+}
+
 const allSteps = [
   { id: 1, name: 'Fonte', icon: Database, description: 'Escolha a origem dos dados' },
   { id: 2, name: 'Conexão', icon: Link2, description: 'Conecte sua conta ou planilha' },
@@ -58,6 +66,11 @@ export default function ProjectConfig() {
   const [metaConnected, setMetaConnected] = useState<boolean | null>(null);
   const [adAccountSearch, setAdAccountSearch] = useState('');
   const [metaCheckStartedAt, setMetaCheckStartedAt] = useState<number | null>(null);
+  const [googleAdsConnected, setGoogleAdsConnected] = useState(false);
+  const [googleAdsValidating, setGoogleAdsValidating] = useState(false);
+  const [googleAdsListing, setGoogleAdsListing] = useState(false);
+  const [googleAdsCustomers, setGoogleAdsCustomers] = useState<GoogleAdsCustomerOption[]>([]);
+  const [googleAdsValidation, setGoogleAdsValidation] = useState<GoogleAdsCustomerOption | null>(null);
 
   const flowSteps = useMemo(() => getStepsBySource(project?.source_type ?? null), [project?.source_type]);
   const currentStepMeta = useMemo(
@@ -108,6 +121,49 @@ export default function ProjectConfig() {
       fetchAdAccounts({ silent: true });
     }
   }, [currentStep, project?.source_type, project?.source_config?.ad_account_id]);
+
+  useEffect(() => {
+    if (!project?.id || project.source_type !== 'meta_ads') return;
+
+    const loadGoogleAdsConnection = async () => {
+      const { data, error } = await supabase
+        .from('project_google_ads_connections')
+        .select('customer_id, login_customer_id, customer_name, currency_code, time_zone, last_validated_at')
+        .eq('project_id', project.id)
+        .maybeSingle();
+
+      if (error) {
+        toast({
+          title: 'Erro ao carregar Google Ads',
+          description: error.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (!data) {
+        setGoogleAdsConnected(false);
+        setGoogleAdsValidation(null);
+        setGoogleAdsCustomers([]);
+        return;
+      }
+
+      setGoogleAdsConnected(true);
+      setGoogleAdsValidation(
+        data.customer_id
+          ? {
+              id: data.customer_id,
+              name: data.customer_name || data.customer_id,
+              currencyCode: data.currency_code,
+              timeZone: data.time_zone,
+              loginCustomerId: data.login_customer_id,
+            }
+          : null,
+      );
+    };
+
+    loadGoogleAdsConnection();
+  }, [project?.id, project?.source_type, toast]);
 
   useEffect(() => {
     if (metaConnected !== null) return;
@@ -318,6 +374,116 @@ export default function ProjectConfig() {
     }
   };
 
+  const syncGoogleAdsProjectConfig = async (customer: GoogleAdsCustomerOption) => {
+    if (!project) return;
+
+    const nextSourceConfig = {
+      ...(project.source_config || {}),
+      google_ads_customer_id: customer.id,
+      google_ads_customer_name: customer.name,
+      google_ads_login_customer_id: customer.loginCustomerId || null,
+    };
+
+    const { error } = await supabase
+      .from('projects')
+      .update({ source_config: nextSourceConfig })
+      .eq('id', project.id);
+
+    if (!error) {
+      setProject({ ...project, source_config: nextSourceConfig });
+    }
+  };
+
+  const saveGoogleAdsCustomerSelection = async (customer: GoogleAdsCustomerOption) => {
+    if (!project?.id) return;
+
+    try {
+      const { error } = await supabase
+        .from('project_google_ads_connections')
+        .update({
+          customer_id: customer.id,
+        })
+        .eq('project_id', project.id);
+
+      if (error) throw error;
+
+      setGoogleAdsValidation(customer);
+      await syncGoogleAdsProjectConfig(customer);
+
+      toast({
+        title: 'Conta Google Ads selecionada',
+        description: `${customer.name} vinculada ao projeto.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Erro ao salvar conta Google Ads',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const validateGoogleAdsConnection = async () => {
+    if (!project?.id || !googleAdsConnected) return;
+
+    setGoogleAdsValidating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('google-ads-api?action=validate-connection', {
+        body: { projectId: project.id },
+      });
+
+      if (error) throw error;
+
+      const customer = data?.customer as GoogleAdsCustomerOption;
+      setGoogleAdsValidation(customer);
+      await syncGoogleAdsProjectConfig(customer);
+
+      toast({
+        title: 'Google Ads validado',
+        description: `${customer.name} conectado com sucesso.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Erro ao validar Google Ads',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setGoogleAdsValidating(false);
+    }
+  };
+
+  const listGoogleAdsCustomers = async () => {
+    if (!project?.id || !googleAdsConnected) return;
+
+    setGoogleAdsListing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('google-ads-api?action=list-accessible-customers', {
+        body: { projectId: project.id },
+      });
+
+      if (error) throw error;
+
+      const customers = Array.isArray(data?.customers) ? data.customers as GoogleAdsCustomerOption[] : [];
+      setGoogleAdsCustomers(customers);
+
+      toast({
+        title: 'Contas carregadas',
+        description: customers.length > 0
+          ? `${customers.length} conta(s) Google Ads encontradas.`
+          : 'Nenhuma conta acessível foi encontrada com essas credenciais.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Erro ao listar contas Google Ads',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setGoogleAdsListing(false);
+    }
+  };
+
   const renderStepContent = () => {
     switch (currentStep) {
       case 1:
@@ -360,54 +526,58 @@ export default function ProjectConfig() {
       case 2:
         if (project?.source_type === 'meta_ads') {
           return (
-            <div className="space-y-6">
-              {metaConnected === false ? (
-                <div className="space-y-6">
-                  <div className="rounded-lg border-2 border-dashed p-8 text-center">
-                    <Facebook className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                    <h3 className="text-lg font-semibold mb-2">Conectar Meta Ads</h3>
-                    <p className="text-muted-foreground mb-4">
-                      Conecte sua conta do Facebook para listar suas contas de anúncios.
-                    </p>
-                    <Button
-                      size="lg"
-                      className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
-                      onClick={async () => {
-                        try {
-                          const returnTo = `/app/projects/${project.id}/config`;
-                          const { data: resData, error: resError } = await supabase.functions.invoke(
-                            `meta-auth?action=authorize&return_to=${encodeURIComponent(returnTo)}`
-                          );
+            <div className="space-y-8">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Meta Ads</CardTitle>
+                  <CardDescription>
+                    Conecte sua conta da Meta e escolha qual conta de anúncios alimenta este dashboard.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {metaConnected === false ? (
+                    <div className="rounded-lg border-2 border-dashed p-8 text-center">
+                      <Facebook className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-semibold mb-2">Conectar Meta Ads</h3>
+                      <p className="text-muted-foreground mb-4">
+                        Conecte sua conta do Facebook para listar suas contas de anúncios.
+                      </p>
+                      <Button
+                        size="lg"
+                        className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+                        onClick={async () => {
+                          try {
+                            const returnTo = `/app/projects/${project.id}/config`;
+                            const { data: resData, error: resError } = await supabase.functions.invoke(
+                              `meta-auth?action=authorize&return_to=${encodeURIComponent(returnTo)}`,
+                            );
 
-                          if (resError) throw resError;
-                          if (resData?.url) {
-                            window.location.href = resData.url;
+                            if (resError) throw resError;
+                            if (resData?.url) {
+                              window.location.href = resData.url;
+                            }
+                          } catch (e: any) {
+                            toast({ title: 'Erro na conexão', description: e.message, variant: 'destructive' });
                           }
-                        } catch (e: any) {
-                          toast({ title: 'Erro na conexão', description: e.message, variant: 'destructive' });
-                        }
-                      }}
-                    >
-                      <Facebook className="h-5 w-5" />
-                      Conectar Conta
-                    </Button>
-                  </div>
-                </div>
-              ) : metaConnected !== true ? (
-                <div className="rounded-lg border p-6 text-center text-muted-foreground">
-                  <p className="mb-3">Verificando conexão com a Meta...</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fetchAdAccounts()}
-                    disabled={loadingAccounts}
-                  >
-                    {loadingAccounts ? 'Carregando...' : 'Tentar novamente'}
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {!project.source_config?.ad_account_id ? (
+                        }}
+                      >
+                        <Facebook className="h-5 w-5" />
+                        Conectar Conta
+                      </Button>
+                    </div>
+                  ) : metaConnected !== true ? (
+                    <div className="rounded-lg border p-6 text-center text-muted-foreground">
+                      <p className="mb-3">Verificando conexão com a Meta...</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchAdAccounts()}
+                        disabled={loadingAccounts}
+                      >
+                        {loadingAccounts ? 'Carregando...' : 'Tentar novamente'}
+                      </Button>
+                    </div>
+                  ) : !project.source_config?.ad_account_id ? (
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
                         <h3 className="text-lg font-medium">Selecione uma conta de anúncios</h3>
@@ -424,7 +594,7 @@ export default function ProjectConfig() {
 
                       {loadingAccounts ? (
                         <div className="space-y-2">
-                          {[1, 2, 3].map(i => <div key={i} className="h-16 bg-muted rounded-lg animate-pulse" />)}
+                          {[1, 2, 3].map((i) => <div key={i} className="h-16 bg-muted rounded-lg animate-pulse" />)}
                         </div>
                       ) : (
                         <div className="grid gap-4">
@@ -442,35 +612,34 @@ export default function ProjectConfig() {
                               return String(acc?.name || '').toLowerCase().includes(adAccountSearch.trim().toLowerCase());
                             })
                             .map((acc) => (
-                            <Card
-                              key={acc.id}
-                              className="cursor-pointer hover:border-primary transition-colors"
-                              onClick={async () => {
-                                try {
-                                  const { error } = await supabase
-                                    .from('projects')
-                                    .update({
-                                      source_config: { ...project.source_config, ad_account_id: acc.id, ad_account_name: acc.name }
-                                    })
-                                    .eq('id', project.id);
+                              <Card
+                                key={acc.id}
+                                className="cursor-pointer hover:border-primary transition-colors"
+                                onClick={async () => {
+                                  try {
+                                    const { error } = await supabase
+                                      .from('projects')
+                                      .update({
+                                        source_config: { ...project.source_config, ad_account_id: acc.id, ad_account_name: acc.name },
+                                      })
+                                      .eq('id', project.id);
 
-                                  if (error) throw error;
-                                  setProject({ ...project, source_config: { ...project.source_config, ad_account_id: acc.id, ad_account_name: acc.name } });
-                                  navigate(`/app/projects/${project.id}/preview`);
-                                } catch (e: any) {
-                                  toast({ title: 'Erro ao selecionar conta', description: e.message, variant: 'destructive' });
-                                }
-                              }}
-                            >
-                              <CardContent className="p-4 flex justify-between items-center">
-                                <div>
-                                  <p className="font-medium">{acc.name}</p>
-                                  <p className="text-xs text-muted-foreground">ID: {acc.id} • {acc.currency}</p>
-                                </div>
-                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                              </CardContent>
-                            </Card>
-                          ))}
+                                    if (error) throw error;
+                                    setProject({ ...project, source_config: { ...project.source_config, ad_account_id: acc.id, ad_account_name: acc.name } });
+                                  } catch (e: any) {
+                                    toast({ title: 'Erro ao selecionar conta', description: e.message, variant: 'destructive' });
+                                  }
+                                }}
+                              >
+                                <CardContent className="p-4 flex justify-between items-center">
+                                  <div>
+                                    <p className="font-medium">{acc.name}</p>
+                                    <p className="text-xs text-muted-foreground">ID: {acc.id} • {acc.currency}</p>
+                                  </div>
+                                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                </CardContent>
+                              </Card>
+                            ))}
                         </div>
                       )}
                     </div>
@@ -485,27 +654,117 @@ export default function ProjectConfig() {
                         size="sm"
                         className="bg-white text-blue-700 border-blue-300 hover:bg-blue-100 hover:text-blue-800"
                         onClick={async () => {
-                        try {
-                          const nextConfig = { ...project.source_config, ad_account_id: null, ad_account_name: null };
-                          const { error } = await supabase
-                            .from('projects')
-                            .update({ source_config: nextConfig })
-                            .eq('id', project.id);
+                          try {
+                            const nextConfig = { ...project.source_config, ad_account_id: null, ad_account_name: null };
+                            const { error } = await supabase
+                              .from('projects')
+                              .update({ source_config: nextConfig })
+                              .eq('id', project.id);
 
-                          if (error) throw error;
-                          setProject({ ...project, source_config: nextConfig });
-                          fetchAdAccounts({ silent: true });
-                        } catch (e: any) {
-                          toast({ title: 'Erro ao alterar conta', description: e.message, variant: 'destructive' });
-                        }
-                      }}
+                            if (error) throw error;
+                            setProject({ ...project, source_config: nextConfig });
+                            fetchAdAccounts({ silent: true });
+                          } catch (e: any) {
+                            toast({ title: 'Erro ao alterar conta', description: e.message, variant: 'destructive' });
+                          }
+                        }}
                       >
                         Alterar
                       </Button>
                     </div>
                   )}
-                </div>
-              )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Google Ads</CardTitle>
+                  <CardDescription>
+                    Conexão segura por projeto. As credenciais globais ficam nas secrets do backend e o refresh token deve ser salvo direto no banco, nunca no navegador.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
+                    <p className="font-medium">Configuração segura</p>
+                    <p className="text-sm text-muted-foreground">
+                      `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `GOOGLE_DEVELOPER_TOKEN` devem ser definidos nas secrets da Edge Function.
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      O `refresh_token` da conta deve ser inserido direto na tabela `project_google_ads_connections` pelo terminal/SQL.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => void validateGoogleAdsConnection()} disabled={!googleAdsConnected || googleAdsValidating || googleAdsListing}>
+                      {googleAdsValidating ? 'Validando...' : 'Validar conexão'}
+                    </Button>
+                    <Button variant="outline" onClick={() => void listGoogleAdsCustomers()} disabled={!googleAdsConnected || googleAdsValidating || googleAdsListing}>
+                      {googleAdsListing ? 'Listando...' : 'Listar contas acessíveis'}
+                    </Button>
+                  </div>
+
+                  {googleAdsConnected && (
+                    <div className="rounded-lg border bg-muted/40 p-4">
+                      <p className="font-medium">Conexão base detectada para este projeto</p>
+                      <p className="text-sm text-muted-foreground">
+                        O backend encontrou um registro em `project_google_ads_connections` para este dashboard.
+                      </p>
+                    </div>
+                  )}
+
+                  {!googleAdsConnected && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                      <p className="font-medium text-amber-800">Conexão não configurada</p>
+                      <p className="text-sm text-amber-700">
+                        Primeiro salve a conexão pelo terminal/SQL. Depois volte aqui para validar e escolher a conta.
+                      </p>
+                    </div>
+                  )}
+
+                  {googleAdsValidation && (
+                    <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+                      <p className="font-medium text-green-800">{googleAdsValidation.name}</p>
+                      <p className="text-sm text-green-700">
+                        ID: {googleAdsValidation.id}
+                        {googleAdsValidation.currencyCode ? ` • ${googleAdsValidation.currencyCode}` : ''}
+                        {googleAdsValidation.timeZone ? ` • ${googleAdsValidation.timeZone}` : ''}
+                      </p>
+                    </div>
+                  )}
+
+                  {googleAdsCustomers.length > 0 && (
+                    <div className="space-y-3">
+                      <div>
+                        <h4 className="font-medium">Contas acessíveis</h4>
+                        <p className="text-sm text-muted-foreground">
+                          Clique em uma conta para preencher o customer_id e validar.
+                        </p>
+                      </div>
+                      <div className="grid gap-3">
+                        {googleAdsCustomers.map((customer) => (
+                          <Card
+                            key={customer.id}
+                            className="cursor-pointer hover:border-primary transition-colors"
+                            onClick={() => void saveGoogleAdsCustomerSelection(customer)}
+                          >
+                            <CardContent className="p-4 flex justify-between items-center">
+                              <div>
+                                <p className="font-medium">{customer.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  ID: {customer.id}
+                                  {customer.currencyCode ? ` • ${customer.currencyCode}` : ''}
+                                  {customer.timeZone ? ` • ${customer.timeZone}` : ''}
+                                </p>
+                              </div>
+                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           );
         }
