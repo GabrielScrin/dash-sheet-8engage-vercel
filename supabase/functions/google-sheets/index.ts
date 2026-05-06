@@ -269,14 +269,15 @@ serve(async (req) => {
         ownerUserId = user.id;
       }
 
-      // Get user's refresh token from profiles
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("google_refresh_token")
+      // Get user's Google refresh token from service_tokens
+      const { data: tokenRow, error: tokenError } = await supabase
+        .from("service_tokens")
+        .select("refresh_token")
         .eq("user_id", ownerUserId)
-        .single();
+        .eq("provider", "google")
+        .maybeSingle();
 
-      if (profileError || !profile?.google_refresh_token) {
+      if (tokenError || !tokenRow?.refresh_token) {
         console.error("No refresh token available");
         return new Response(JSON.stringify({
           error: "Google account not connected or refresh token missing.",
@@ -288,7 +289,7 @@ serve(async (req) => {
       }
 
       // Get fresh access token
-      accessToken = await refreshAccessToken(profile.google_refresh_token);
+      accessToken = await refreshAccessToken(tokenRow.refresh_token);
     }
 
 
