@@ -33,22 +33,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Use setTimeout to avoid blocking the auth flow
           setTimeout(async () => {
             try {
-              const { error } = await supabase
+              // Upsert profile (without sensitive token data)
+              const { error: profileError } = await supabase
                 .from('profiles')
                 .upsert({
                   user_id: session.user.id,
                   email: session.user.email,
                   full_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name,
                   avatar_url: session.user.user_metadata?.avatar_url,
-                  google_refresh_token: session.provider_refresh_token,
                 }, {
                   onConflict: 'user_id',
                 });
-              
-              if (error) {
-                console.error('Failed to upsert profile with refresh token:', error);
+
+              if (profileError) {
+                console.error('Failed to upsert profile:', profileError);
+              }
+
+              // Store the Google refresh token in the secure service_tokens table.
+              // Delete any existing google token for this user, then insert the new one.
+              await supabase
+                .from('service_tokens')
+                .delete()
+                .eq('user_id', session.user.id)
+                .eq('provider', 'google');
+
+              const { error: tokenError } = await supabase
+                .from('service_tokens')
+                .insert({
+                  user_id: session.user.id,
+                  provider: 'google',
+                  access_token: session.provider_token ?? '',
+                  refresh_token: session.provider_refresh_token,
+                  token_type: 'Bearer',
+                  scope: 'https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.metadata.readonly',
+                });
+
+              if (tokenError) {
+                console.error('Failed to store Google refresh token:', tokenError);
               } else {
-                console.log('Profile upserted with Google refresh token');
+                console.log('Google refresh token stored in service_tokens');
               }
             } catch (err) {
               console.error('Error upserting profile:', err);
