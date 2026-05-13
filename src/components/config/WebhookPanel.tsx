@@ -24,7 +24,7 @@ export function WebhookPanel({ projectId }: WebhookPanelProps) {
   });
 
   const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim();
-  const baseUrl = `${supabaseUrl || 'https://ufksgrounhmfafdajbrr.supabase.co'}/functions/v1/payment-attribution`;
+  const baseUrl = `${supabaseUrl || 'https://hzstynttwwjlhvywemml.supabase.co'}/functions/v1/payment-attribution`;
   const defaultWebhookUrl = `${baseUrl}?action=ingest-webhook&provider=hotmart&projectId=${encodeURIComponent(projectId)}`;
   const [webhookUrl, setWebhookUrl] = useState(defaultWebhookUrl);
 
