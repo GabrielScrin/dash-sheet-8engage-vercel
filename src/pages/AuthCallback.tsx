@@ -9,6 +9,11 @@ function getSafeReturnTo(value: string | null) {
   return value;
 }
 
+function getHashParams(hash: string) {
+  const raw = hash.startsWith('#') ? hash.slice(1) : hash;
+  return new URLSearchParams(raw);
+}
+
 export default function AuthCallback() {
   useEffect(() => {
     let active = true;
@@ -18,6 +23,9 @@ export default function AuthCallback() {
       const returnTo = getSafeReturnTo(url.searchParams.get('next'));
       const code = url.searchParams.get('code');
       const errorDescription = url.searchParams.get('error_description');
+      const hashParams = getHashParams(url.hash);
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
 
       if (errorDescription) {
         window.location.replace(`/login?error=${encodeURIComponent(errorDescription)}`);
@@ -28,6 +36,17 @@ export default function AuthCallback() {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
           console.error('OAuth callback exchange failed:', error);
+          window.location.replace(`/login?error=${encodeURIComponent(error.message)}`);
+          return;
+        }
+      } else if (accessToken && refreshToken) {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+
+        if (error) {
+          console.error('OAuth callback setSession failed:', error);
           window.location.replace(`/login?error=${encodeURIComponent(error.message)}`);
           return;
         }
@@ -44,7 +63,7 @@ export default function AuthCallback() {
         await new Promise((resolve) => window.setTimeout(resolve, 100));
       }
 
-      window.location.replace('/login?error=session_not_found');
+      window.location.replace('/login?error=session_not_found_callback');
     };
 
     void finishLogin();

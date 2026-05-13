@@ -40,6 +40,8 @@ export default function Login() {
     const description =
       error === 'session_not_found'
         ? 'O Google autenticou, mas o Supabase nao criou a sessao do app. Verifique as Redirect URLs do Supabase para este dominio.'
+        : error === 'session_not_found_callback'
+          ? 'O callback voltou sem sessao ativa. Isso indica falha no retorno OAuth do Supabase ou no formato do token recebido.'
         : decodeURIComponent(error);
 
     toast({
