@@ -81,18 +81,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    // Se há token OAuth na URL, deixa o onAuthStateChange resolver (evita race condition)
+    const hasOAuthToken = window.location.hash.includes('access_token') ||
+                          window.location.search.includes('code=');
+    if (!hasOAuthToken) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        setLoading(false);
+      });
+    }
 
     return () => subscription.unsubscribe();
   }, []);
 
   const signInWithGoogle = async () => {
-    const redirectUrl = `${window.location.origin}/auth/callback`;
+    const redirectUrl = window.location.origin + '/';
     
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
