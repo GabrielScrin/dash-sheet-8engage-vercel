@@ -1,4 +1,4 @@
-project_id = "ufksgrounhmfafdajbrr"
+project_id = "hzstynttwwjlhvywemml"
 
 [functions.validate-share-token]
 verify_jwt = false
