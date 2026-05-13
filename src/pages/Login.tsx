@@ -31,6 +31,24 @@ export default function Login() {
     }
   }, [user, loading, navigate, from]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const error = params.get('error');
+
+    if (!error) return;
+
+    const description =
+      error === 'session_not_found'
+        ? 'O Google autenticou, mas o Supabase nao criou a sessao do app. Verifique as Redirect URLs do Supabase para este dominio.'
+        : decodeURIComponent(error);
+
+    toast({
+      title: 'Falha no login',
+      description,
+      variant: 'destructive',
+    });
+  }, [location.search, toast]);
+
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     const { error } = await signInWithGoogle(from);
