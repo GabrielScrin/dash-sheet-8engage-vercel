@@ -81,16 +81,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    // Se há token OAuth na URL, deixa o onAuthStateChange resolver (evita race condition)
-    const hasOAuthToken = window.location.hash.includes('access_token') ||
-                          window.location.search.includes('code=');
-    if (!hasOAuthToken) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
-      });
-    }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
 
     return () => subscription.unsubscribe();
   }, []);
