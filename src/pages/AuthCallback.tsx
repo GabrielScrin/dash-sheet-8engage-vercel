@@ -1,29 +1,30 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 export default function AuthCallback() {
-  const navigate = useNavigate();
-
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        subscription.unsubscribe();
-        navigate('/app/projects', { replace: true });
-      }
-    });
+    let attempts = 0;
+    const max = 50; // 5 segundos
 
-    // Fallback: se já tiver sessão, redireciona imediatamente
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const poll = setInterval(async () => {
+      attempts++;
+      const { data: { session } } = await supabase.auth.getSession();
+
       if (session) {
-        subscription.unsubscribe();
-        navigate('/app/projects', { replace: true });
+        clearInterval(poll);
+        window.location.replace('/app/projects');
+        return;
       }
-    });
 
-    return () => subscription.unsubscribe();
-  }, [navigate]);
+      if (attempts >= max) {
+        clearInterval(poll);
+        window.location.replace('/login');
+      }
+    }, 100);
+
+    return () => clearInterval(poll);
+  }, []);
 
   return (
     <div className="flex min-h-screen items-center justify-center">
