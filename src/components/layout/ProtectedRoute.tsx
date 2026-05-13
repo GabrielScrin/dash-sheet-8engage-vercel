@@ -9,8 +9,13 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, loading } = useAuth();
   const location = useLocation();
+  const hasOAuthParams =
+    location.search.includes('code=') ||
+    location.search.includes('error_description=') ||
+    location.hash.includes('access_token=') ||
+    location.hash.includes('refresh_token=');
 
-  if (loading) {
+  if (loading || hasOAuthParams) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
