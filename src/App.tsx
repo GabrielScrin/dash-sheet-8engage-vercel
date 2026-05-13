@@ -16,6 +16,7 @@ import ProjectPreview from "./pages/app/ProjectPreview";
 import MetaCallback from "./pages/app/MetaCallback";
 import Settings from "./pages/app/Settings";
 import ViewDashboard from "./pages/ViewDashboard";
+import PublicClientPortal from "./pages/PublicClientPortal";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -33,6 +34,7 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/login" element={<Login />} />
               <Route path="/view/:token" element={<ViewDashboard />} />
+              <Route path="/portal/:token" element={<PublicClientPortal />} />
               
               {/* Protected routes */}
               <Route path="/app/projects" element={

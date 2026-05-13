@@ -749,6 +749,28 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     enabled: project?.source_type === 'meta_ads' && !!adAccountId,
   });
 
+  const googleAdsInsightsQuery = useQuery({
+    queryKey: [
+      'google-ads-insights',
+      projectId,
+      dateRange?.from ? dateRange.from.toISOString() : null,
+      dateRange?.to ? dateRange.to.toISOString() : null,
+    ],
+    queryFn: async () => {
+      const startDate = dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : format(subDays(new Date(), 30), 'yyyy-MM-dd');
+      const endDate = format(dateRange?.to || new Date(), 'yyyy-MM-dd');
+      try {
+        const data = await invokeEdge('google-ads-api?action=insights', { projectId, startDate, endDate });
+        return (data?.totals ?? null) as { spend: number; impressions: number; clicks: number; conversions: number } | null;
+      } catch {
+        return null;
+      }
+    },
+    enabled: project?.source_type === 'meta_ads' && !!projectId,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const paymentAttributionSummaryQuery = useQuery({
     queryKey: [
       'payment-attribution-summary',
@@ -3922,29 +3944,78 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     const r: any = metaTotalsRow;
     if (!r) return [];
 
-    const spend = Number(r?.spend || 0);
-    const impressions = Number(r?.impressions || 0);
-    const clicks = Number(r?.clicks || 0);
-    const leads = Number(r?.leads || 0);
-    const purchases = Number(r?.purchases || 0);
-    const purchaseValue = Number(r?.purchase_value || 0);
+    const metaSpend = Number(r?.spend || 0);
+    const metaImpressions = Number(r?.impressions || 0);
+    const metaClicks = Number(r?.clicks || 0);
+    const metaLeads = Number(r?.leads || 0);
+    const metaPurchases = Number(r?.purchases || 0);
+    const metaPurchaseValue = Number(r?.purchase_value || 0);
+    const metaResults = metaPurchases > 0 ? metaPurchases : metaLeads;
 
-    const resultsLabel = purchases > 0 ? 'Vendas' : 'Leads';
-    const results = purchases > 0 ? purchases : leads;
-    const costPerResult = results > 0 ? spend / results : 0;
-    const roas = spend > 0 ? purchaseValue / spend : Number(r?.roas || 0);
-    const roi = spend > 0 ? (purchaseValue - spend) / spend : 0;
+    const gTotals = googleAdsInsightsQuery.data;
+    const hasGoogle = gTotals != null;
 
-    return [
-      { label: 'Investimento', value: spend, format: 'currency' as const },
-      { label: 'Impressões', value: impressions, format: 'number' as const },
-      { label: 'Cliques', value: clicks, format: 'number' as const },
-      { label: resultsLabel, value: results, format: 'number' as const },
-      { label: purchases > 0 ? 'CPA' : 'CPL', value: costPerResult, format: 'currency' as const },
-      { label: 'ROAS', value: roas, format: 'decimal' as const },
-      { label: 'ROI', value: roi, format: 'percentage' as const },
+    // Fallback: Meta-only (sem Google Ads conectado)
+    if (!hasGoogle) {
+      const resultsLabel = metaPurchases > 0 ? 'Vendas' : 'Leads';
+      const costPerResult = metaResults > 0 ? metaSpend / metaResults : 0;
+      const roas = metaSpend > 0 ? metaPurchaseValue / metaSpend : Number(r?.roas || 0);
+      const roi = metaSpend > 0 ? (metaPurchaseValue - metaSpend) / metaSpend : 0;
+      return [
+        { label: 'Investimento', value: metaSpend, format: 'currency' as const },
+        { label: 'Impressões', value: metaImpressions, format: 'number' as const },
+        { label: 'Cliques', value: metaClicks, format: 'number' as const },
+        { label: resultsLabel, value: metaResults, format: 'number' as const },
+        { label: metaPurchases > 0 ? 'CPA' : 'CPL', value: costPerResult, format: 'currency' as const },
+        { label: 'ROAS', value: roas, format: 'decimal' as const },
+        { label: 'ROI', value: roi, format: 'percentage' as const },
+      ];
+    }
+
+    // Painel consolidado Meta + Google
+    const googleSpend = Number(gTotals.spend || 0);
+    const googleImpressions = Number(gTotals.impressions || 0);
+    const googleClicks = Number(gTotals.clicks || 0);
+    const googleConversions = Number(gTotals.conversions || 0);
+
+    const totalSpend = metaSpend + googleSpend;
+    const totalImpressions = metaImpressions + googleImpressions;
+    const totalClicks = metaClicks + googleClicks;
+    const totalResults = metaResults + googleConversions;
+    const totalCPR = totalResults > 0 ? totalSpend / totalResults : 0;
+
+    const fmt = (n: number) => Math.round(n).toLocaleString('pt-BR');
+    const resultsSubtitle = `Meta ${fmt(metaResults)} + Google ${fmt(googleConversions)}`;
+
+    const monthlyBudget = Number(sourceConfig?.monthly_budget || 0);
+    const dateRangeDays = dateRange?.from && dateRange?.to
+      ? Math.max(1, Math.round((new Date(dateRange.to).getTime() - new Date(dateRange.from).getTime()) / (1000 * 60 * 60 * 24)) + 1)
+      : 30;
+    const proratedBudget = monthlyBudget > 0 ? monthlyBudget * (dateRangeDays / 30) : 0;
+
+    const cards: any[] = [
+      { label: 'Investimento Total', value: totalSpend, format: 'currency' as const, subtitle: 'Meta + Google' },
+      { label: 'Impressões Totais', value: totalImpressions, format: 'number' as const, subtitle: 'Meta + Google' },
+      { label: 'Cliques Totais', value: totalClicks, format: 'number' as const, subtitle: 'Meta + Google' },
+      { label: 'Resultados Totais', value: totalResults, format: 'number' as const, subtitle: resultsSubtitle },
+      { label: 'Custo por Resultado', value: totalCPR, format: 'currency' as const, subtitle: 'Meta + Google' },
     ];
-  }, [metaTotalsRow, project?.source_type]);
+
+    if (monthlyBudget > 0 && proratedBudget > 0) {
+      const fmt2 = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+      cards.push({
+        label: 'Meta de Investimento',
+        value: proratedBudget,
+        format: 'currency' as const,
+        subtitle: `Base mensal ${fmt2.format(monthlyBudget)} · ${dateRangeDays} dias proporcionais`,
+        budgetProgress: totalSpend / proratedBudget,
+        budgetSpend: totalSpend,
+        budgetTarget: proratedBudget,
+      });
+    }
+
+    return cards;
+  }, [metaTotalsRow, project?.source_type, googleAdsInsightsQuery.data, sourceConfig, dateRange]);
 
   const bigNumbersToRender =
     project?.source_type === 'meta_ads'
@@ -4205,7 +4276,12 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
               {/* Big Numbers */}
               {bigNumbersToRender.length > 0 && (
                 <section>
-                  <h3 className="mb-4 text-lg font-semibold">Indicadores Principais</h3>
+                  <div className="mb-4">
+                    <h3 className="text-lg font-semibold">Indicadores Principais</h3>
+                    {project?.source_type === 'meta_ads' && googleAdsInsightsQuery.data != null && (
+                      <p className="mt-0.5 text-sm text-muted-foreground">Painel consolidado de mídia paga · visão combinada do período selecionado</p>
+                    )}
+                  </div>
                   {project?.source_type !== 'meta_ads' && sheetMetricOptions.length > 0 ? (
                     <div className="space-y-3">
                       {[0, 4].map((offset) => (
@@ -4260,10 +4336,14 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                       ))}
                     </div>
                   ) : (
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                       {bigNumbersToRender.map((kpi, index) => {
                         const { label, value, format } = kpi;
                         const previousValue = 'previousValue' in kpi ? (kpi as any).previousValue : undefined;
+                        const subtitle = 'subtitle' in kpi ? (kpi as any).subtitle as string | undefined : undefined;
+                        const budgetProgress = 'budgetProgress' in kpi ? (kpi as any).budgetProgress as number | undefined : undefined;
+                        const budgetSpend = 'budgetSpend' in kpi ? (kpi as any).budgetSpend as number | undefined : undefined;
+                        const budgetTarget = 'budgetTarget' in kpi ? (kpi as any).budgetTarget as number | undefined : undefined;
                         return (
                           <BigNumberCard
                             key={label}
@@ -4272,6 +4352,10 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                             previousValue={previousValue}
                             format={format}
                             delay={index * 0.1}
+                            subtitle={subtitle}
+                            budgetProgress={budgetProgress}
+                            budgetSpend={budgetSpend}
+                            budgetTarget={budgetTarget}
                           />
                         );
                       })}

@@ -172,6 +172,58 @@ async function validateCustomer(accessToken: string, connection: GoogleAdsConnec
   };
 }
 
+async function fetchInsights(
+  accessToken: string,
+  connection: GoogleAdsConnectionRow,
+  startDate: string,
+  endDate: string,
+) {
+  const customerId = normalizeCustomerId(connection.customer_id);
+  if (!customerId) {
+    throw new Error("customer_id não configurado. Configure o Google Ads no painel do projeto.");
+  }
+
+  const query = [
+    "SELECT metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions",
+    "FROM campaign",
+    `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+    "AND campaign.status != 'REMOVED'",
+  ].join(" ");
+
+  const response = await googleAdsRequest<Array<{
+    results?: Array<{
+      metrics?: {
+        costMicros?: string;
+        impressions?: string;
+        clicks?: string;
+        conversions?: number;
+      };
+    }>;
+  }>>(
+    accessToken,
+    connection,
+    `/customers/${customerId}/googleAds:searchStream`,
+    { method: "POST", body: JSON.stringify({ query }) },
+  );
+
+  let spend = 0;
+  let impressions = 0;
+  let clicks = 0;
+  let conversions = 0;
+
+  const batches = Array.isArray(response) ? response : [response];
+  for (const batch of batches) {
+    for (const result of batch.results || []) {
+      spend += Number(result.metrics?.costMicros || 0) / 1_000_000;
+      impressions += Number(result.metrics?.impressions || 0);
+      clicks += Number(result.metrics?.clicks || 0);
+      conversions += Number(result.metrics?.conversions || 0);
+    }
+  }
+
+  return { spend, impressions, clicks, conversions };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -180,46 +232,67 @@ Deno.serve(async (req) => {
   try {
     const url = new URL(req.url);
     const action = url.searchParams.get("action");
-    const authHeader = req.headers.get("Authorization");
-
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Missing authorization header" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const token = authHeader.replace("Bearer ", "");
-    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+    const authHeader = req.headers.get("Authorization");
+    const shareTokenHeader = req.headers.get("x-share-token");
 
-    const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims?.sub) {
-      return new Response(JSON.stringify({ error: "Invalid or expired token" }), {
+    const body = await req.json().catch(() => ({}));
+    const projectId = String(body?.projectId || "").trim();
+    if (!projectId) throw new Error("projectId é obrigatório");
+
+    // Auth: share token OR user JWT
+    let userId: string | null = null;
+
+    if (shareTokenHeader) {
+      const { data: tokenRow } = await adminClient
+        .from("share_tokens")
+        .select("project_id")
+        .eq("token", shareTokenHeader.trim())
+        .eq("is_active", true)
+        .single();
+
+      if (!tokenRow || tokenRow.project_id !== projectId) {
+        return new Response(JSON.stringify({ error: "Token de compartilhamento inválido" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // userId stays null — share token path bypasses user ownership check
+    } else if (authHeader?.startsWith("Bearer ")) {
+      const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user }, error: userError } = await userClient.auth.getUser();
+      if (userError || !user) {
+        return new Response(JSON.stringify({ error: "Invalid or expired token" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      userId = user.id;
+    } else {
+      return new Response(JSON.stringify({ error: "Missing authorization" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const userId = String(claimsData.claims.sub);
-    const body = await req.json().catch(() => ({}));
-    const projectId = String(body?.projectId || "").trim();
-    if (!projectId) {
-      throw new Error("projectId é obrigatório");
-    }
-
-    const { data: connection, error: connectionError } = await adminClient
+    // Fetch Google Ads connection
+    let connectionQuery = adminClient
       .from("project_google_ads_connections")
       .select("*")
-      .eq("project_id", projectId)
-      .eq("user_id", userId)
-      .single();
+      .eq("project_id", projectId);
+
+    if (userId) {
+      connectionQuery = connectionQuery.eq("user_id", userId);
+    }
+
+    const { data: connection, error: connectionError } = await connectionQuery.single();
 
     if (connectionError || !connection) {
       return new Response(JSON.stringify({ error: "Conexão do Google Ads não encontrada para este projeto" }), {
@@ -230,6 +303,105 @@ Deno.serve(async (req) => {
 
     const typedConnection = connection as GoogleAdsConnectionRow;
     const accessToken = await refreshAccessToken(typedConnection);
+
+    if (action === "insights") {
+      const startDate = String(body?.startDate || "").trim();
+      const endDate = String(body?.endDate || "").trim();
+      if (!startDate || !endDate) throw new Error("startDate e endDate são obrigatórios");
+
+      const totals = await fetchInsights(accessToken, typedConnection, startDate, endDate);
+      return new Response(JSON.stringify({ totals }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "portal-overview") {
+      const startDate = String(body?.startDate || "").trim();
+      const endDate = String(body?.endDate || "").trim();
+      if (!startDate || !endDate) throw new Error("startDate e endDate são obrigatórios");
+
+      const customerId = normalizeCustomerId(typedConnection.customer_id);
+      if (!customerId) throw new Error("customer_id não configurado. Configure o Google Ads no painel do projeto.");
+
+      const timeseriesQuery = [
+        "SELECT segments.date, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions",
+        "FROM campaign",
+        `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+        "AND campaign.status != 'REMOVED'",
+      ].join(" ");
+
+      const campaignsQuery = [
+        "SELECT campaign.id, campaign.name, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions",
+        "FROM campaign",
+        `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+        "AND campaign.status != 'REMOVED'",
+      ].join(" ");
+
+      type BatchResult = Array<{
+        results?: Array<{
+          segments?: { date?: string };
+          campaign?: { id?: string; name?: string };
+          metrics?: { costMicros?: string; impressions?: string; clicks?: string; conversions?: number };
+        }>;
+      }>;
+
+      const [tsRes, campRes] = await Promise.all([
+        googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
+          method: "POST",
+          body: JSON.stringify({ query: timeseriesQuery }),
+        }),
+        googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
+          method: "POST",
+          body: JSON.stringify({ query: campaignsQuery }),
+        }),
+      ]);
+
+      const byDate = new Map<string, { date: string; spend: number; conversions: number; impressions: number; clicks: number }>();
+      for (const batch of (Array.isArray(tsRes) ? tsRes : [tsRes])) {
+        for (const result of (batch.results || [])) {
+          const date = String(result.segments?.date || "");
+          if (!date) continue;
+          const cur = byDate.get(date) || { date, spend: 0, conversions: 0, impressions: 0, clicks: 0 };
+          cur.spend += Number(result.metrics?.costMicros || 0) / 1_000_000;
+          cur.conversions += Number(result.metrics?.conversions || 0);
+          cur.impressions += Number(result.metrics?.impressions || 0);
+          cur.clicks += Number(result.metrics?.clicks || 0);
+          byDate.set(date, cur);
+        }
+      }
+      const timeseries = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+      const byCampaign = new Map<string, { id: string; name: string; spend: number; conversions: number; impressions: number; clicks: number }>();
+      for (const batch of (Array.isArray(campRes) ? campRes : [campRes])) {
+        for (const result of (batch.results || [])) {
+          const id = String(result.campaign?.id || "");
+          if (!id) continue;
+          const name = String(result.campaign?.name || id);
+          const cur = byCampaign.get(id) || { id, name, spend: 0, conversions: 0, impressions: 0, clicks: 0 };
+          cur.spend += Number(result.metrics?.costMicros || 0) / 1_000_000;
+          cur.conversions += Number(result.metrics?.conversions || 0);
+          cur.impressions += Number(result.metrics?.impressions || 0);
+          cur.clicks += Number(result.metrics?.clicks || 0);
+          byCampaign.set(id, cur);
+        }
+      }
+      const campaigns = Array.from(byCampaign.values()).map((c) => ({
+        id: c.id,
+        name: c.name,
+        spend: c.spend,
+        ctr: c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0,
+        conversions: c.conversions,
+      }));
+
+      const totals = timeseries.reduce(
+        (acc, r) => ({ spend: acc.spend + r.spend, conversions: acc.conversions + r.conversions, impressions: acc.impressions + r.impressions }),
+        { spend: 0, conversions: 0, impressions: 0 },
+      );
+
+      return new Response(JSON.stringify({ timeseries, campaigns, totals }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (action === "list-accessible-customers") {
       const customers = await listAccessibleCustomers(accessToken, typedConnection);
@@ -251,7 +423,7 @@ Deno.serve(async (req) => {
           last_validated_at: new Date().toISOString(),
         })
         .eq("project_id", projectId)
-        .eq("user_id", userId);
+        .eq("user_id", userId ?? "");
 
       return new Response(JSON.stringify({ customer, valid: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
