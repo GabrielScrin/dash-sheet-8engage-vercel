@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 
 function getSafeReturnTo(value: string | null) {
   if (!value) return '/app/projects';
@@ -9,69 +10,29 @@ function getSafeReturnTo(value: string | null) {
   return value;
 }
 
-function getHashParams(hash: string) {
-  const raw = hash.startsWith('#') ? hash.slice(1) : hash;
-  return new URLSearchParams(raw);
-}
-
 export default function AuthCallback() {
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+
   useEffect(() => {
-    let active = true;
+    if (loading) return;
 
-    const finishLogin = async () => {
-      const url = new URL(window.location.href);
-      const returnTo = getSafeReturnTo(url.searchParams.get('next'));
-      const code = url.searchParams.get('code');
-      const errorDescription = url.searchParams.get('error_description');
-      const hashParams = getHashParams(url.hash);
-      const accessToken = hashParams.get('access_token');
-      const refreshToken = hashParams.get('refresh_token');
+    const url = new URL(window.location.href);
+    const returnTo = getSafeReturnTo(url.searchParams.get('next'));
+    const errorDescription = url.searchParams.get('error_description');
 
-      if (errorDescription) {
-        window.location.replace(`/login?error=${encodeURIComponent(errorDescription)}`);
-        return;
-      }
+    if (errorDescription) {
+      window.location.replace(`/login?error=${encodeURIComponent(errorDescription)}`);
+      return;
+    }
 
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) {
-          console.error('OAuth callback exchange failed:', error);
-          window.location.replace(`/login?error=${encodeURIComponent(error.message)}`);
-          return;
-        }
-      } else if (accessToken && refreshToken) {
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
+    if (user) {
+      navigate(returnTo, { replace: true });
+      return;
+    }
 
-        if (error) {
-          console.error('OAuth callback setSession failed:', error);
-          window.location.replace(`/login?error=${encodeURIComponent(error.message)}`);
-          return;
-        }
-      }
-
-      for (let attempts = 0; active && attempts < 50; attempts++) {
-        const { data: { session } } = await supabase.auth.getSession();
-
-        if (session) {
-          window.location.replace(returnTo);
-          return;
-        }
-
-        await new Promise((resolve) => window.setTimeout(resolve, 100));
-      }
-
-      window.location.replace('/login?error=session_not_found_callback');
-    };
-
-    void finishLogin();
-
-    return () => {
-      active = false;
-    };
-  }, []);
+    window.location.replace('/login?error=session_not_found_callback');
+  }, [loading, navigate, user]);
 
   return (
     <div className="flex min-h-screen items-center justify-center">
