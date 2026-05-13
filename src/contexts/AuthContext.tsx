@@ -95,7 +95,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       returnTo.startsWith('/') && !returnTo.startsWith('//')
         ? returnTo
         : '/app/projects';
-    const redirectUrl = new URL(safeReturnTo, window.location.origin);
+    const redirectUrl = new URL('/auth/callback', window.location.origin);
+    redirectUrl.searchParams.set('next', safeReturnTo);
     
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
