@@ -33,7 +33,7 @@ export default function Login() {
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
-    const { error } = await signInWithGoogle();
+    const { error } = await signInWithGoogle(from);
     
     if (error) {
       toast({
