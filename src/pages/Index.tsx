@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight, Table2, BarChart3, Share2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,10 +12,18 @@ export default function Index() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (user && !loading) {
-      navigate('/app/projects');
+    if (!loading && user) {
+      navigate('/app/projects', { replace: true });
     }
   }, [user, loading, navigate]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   const features = [
     {
