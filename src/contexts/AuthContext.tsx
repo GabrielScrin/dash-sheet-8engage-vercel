@@ -6,7 +6,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signInWithGoogle: () => Promise<{ error: Error | null }>;
+  signInWithGoogle: (returnTo?: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   getGoogleAccessToken: () => Promise<string | null>;
 }
@@ -90,13 +90,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signInWithGoogle = async () => {
-    const redirectUrl = `${window.location.origin}/auth/callback`;
+  const signInWithGoogle = async (returnTo = '/app/projects') => {
+    const redirectUrl = new URL('/auth/callback', window.location.origin);
+    redirectUrl.searchParams.set('next', returnTo);
     
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: redirectUrl,
+        redirectTo: redirectUrl.toString(),
         scopes: 'https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.metadata.readonly',
         queryParams: {
           access_type: 'offline',
