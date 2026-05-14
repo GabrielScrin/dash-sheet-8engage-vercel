@@ -14,9 +14,7 @@ declare global {
   }
 }
 
-const GOOGLE_CLIENT_ID =
-  import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-  '429064456218-8incb1jjg643t6u82tg52g75321ijka9.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 async function generateNoncePair() {
   const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
@@ -102,6 +100,10 @@ export default function Login() {
         });
 
       try {
+        if (!GOOGLE_CLIENT_ID) {
+          throw new Error('VITE_GOOGLE_CLIENT_ID nao configurado.');
+        }
+
         await loadScript();
         if (cancelled || !googleButtonRef.current || !window.google?.accounts?.id) return;
 
