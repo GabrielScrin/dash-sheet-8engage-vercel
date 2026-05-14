@@ -25,3 +25,6 @@ dist-ssr
 .vercel
 supabase/.temp/
 vite-dev.log
+.env
+.env.local
+.env.*.local
