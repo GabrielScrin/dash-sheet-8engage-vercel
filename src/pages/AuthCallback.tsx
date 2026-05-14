@@ -7,6 +7,12 @@ export default function AuthCallback() {
   const [detail, setDetail] = useState<string | null>(null);
 
   useEffect(() => {
+    const getRelevantCookieKeys = () =>
+      document.cookie
+        .split('; ')
+        .map(cookie => cookie.split('=')[0])
+        .filter(key => key.includes('supabase') || key.includes('pkce') || key.includes('verifier'));
+
     const params = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
 
@@ -25,22 +31,20 @@ export default function AuthCallback() {
     const code = params.get('code');
 
     if (!code) {
-      setError('Nenhum código de autenticação recebido na URL.');
+      setError('Nenhum codigo de autenticacao recebido na URL.');
       setDetail(`URL: ${window.location.href}`);
       return;
     }
 
-    // detectSessionInUrl está desativado para não consumir o verifier antes de nós.
-    // Fazemos a troca manualmente com captura de erro.
-    supabase.auth.exchangeCodeForSession(window.location.href).then(({ data, error: exchangeError }) => {
+    // detectSessionInUrl fica desativado para nao consumir o verifier antes daqui.
+    // A SDK espera apenas o auth code; o verifier fica persistido no storage.
+    supabase.auth.exchangeCodeForSession(code).then(({ data, error: exchangeError }) => {
       if (exchangeError) {
-        const storageKeys = Object.keys(localStorage).filter(k =>
-          k.includes('supabase') || k.includes('pkce') || k.includes('verifier')
-        );
-        setError(`Falha na troca do código: ${exchangeError.message}`);
+        const cookieKeys = getRelevantCookieKeys();
+        setError(`Falha na troca do codigo: ${exchangeError.message}`);
         setDetail(
           `status: ${exchangeError.status ?? 'n/a'} | ` +
-          `storage keys: ${storageKeys.length > 0 ? storageKeys.join(', ') : 'nenhuma'}`
+          `cookie keys: ${cookieKeys.length > 0 ? cookieKeys.join(', ') : 'nenhuma'}`
         );
         return;
       }
@@ -48,7 +52,7 @@ export default function AuthCallback() {
       if (data?.session) {
         window.location.replace('/app/projects');
       } else {
-        setError('Troca realizada mas sessão não foi retornada.');
+        setError('Troca realizada mas sessao nao foi retornada.');
         setDetail(`URL: ${window.location.href}`);
       }
     });
@@ -60,10 +64,10 @@ export default function AuthCallback() {
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
           <AlertCircle className="h-7 w-7 text-destructive" />
         </div>
-        <h2 className="text-lg font-semibold">Falha na autenticação</h2>
+        <h2 className="text-lg font-semibold">Falha na autenticacao</h2>
         <p className="max-w-sm text-sm text-muted-foreground">{error}</p>
         {detail && (
-          <p className="max-w-sm rounded-md bg-muted px-3 py-2 text-left font-mono text-xs text-muted-foreground break-all">
+          <p className="max-w-sm break-all rounded-md bg-muted px-3 py-2 text-left font-mono text-xs text-muted-foreground">
             {detail}
           </p>
         )}
