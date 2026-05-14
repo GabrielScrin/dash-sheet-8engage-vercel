@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 
 function getSafeReturnTo(value: string | null) {
   if (!value) return '/app/projects';
@@ -26,12 +27,38 @@ export default function AuthCallback() {
       return;
     }
 
-    if (user) {
-      navigate(returnTo, { replace: true });
-      return;
-    }
+    let active = true;
 
-    window.location.replace('/login?error=session_not_found_callback');
+    const waitForSession = async () => {
+      if (user) {
+        navigate(returnTo, { replace: true });
+        return;
+      }
+
+      for (let attempt = 0; attempt < 50 && active; attempt++) {
+        const { data, error } = await supabase.auth.getSession();
+
+        if (error) {
+          window.location.replace(`/login?error=${encodeURIComponent(error.message)}`);
+          return;
+        }
+
+        if (data.session?.user) {
+          navigate(returnTo, { replace: true });
+          return;
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
+      }
+
+      window.location.replace('/login?error=session_not_found_callback');
+    };
+
+    void waitForSession();
+
+    return () => {
+      active = false;
+    };
   }, [loading, navigate, user]);
 
   return (
