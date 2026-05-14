@@ -71,7 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         scopes: 'https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.metadata.readonly',
         queryParams: {
           access_type: 'offline',
-          prompt: 'select_account',
+          prompt: 'select_account consent',
         },
       },
     });
