@@ -6,24 +6,54 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 
 export default function Index() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { toast } = useToast();
 
   useEffect(() => {
-    if (!loading && user) {
-      const params = new URLSearchParams(location.search);
-      const next = params.get('next');
-      const returnTo =
-        next && next.startsWith('/') && !next.startsWith('//')
-          ? next
-          : '/app/projects';
+    if (loading) return;
 
+    const params = new URLSearchParams(location.search);
+    const hashParams = new URLSearchParams(location.hash.startsWith('#') ? location.hash.slice(1) : location.hash);
+    const next = params.get('next');
+    const returnTo =
+      next && next.startsWith('/') && !next.startsWith('//')
+        ? next
+        : '/app/projects';
+
+    const errorDescription =
+      params.get('error_description') ||
+      hashParams.get('error_description') ||
+      hashParams.get('error');
+
+    if (user) {
       navigate(returnTo, { replace: true });
+      return;
     }
-  }, [user, loading, navigate, location.search]);
+
+    if (errorDescription) {
+      toast({
+        title: 'Falha no login',
+        description: decodeURIComponent(errorDescription),
+        variant: 'destructive',
+      });
+      navigate('/login', { replace: true, state: { from: returnTo } });
+      return;
+    }
+
+    if (next) {
+      toast({
+        title: 'Falha no login',
+        description: 'O Google retornou ao app, mas o Supabase nao abriu uma sessao valida.',
+        variant: 'destructive',
+      });
+      navigate('/login', { replace: true, state: { from: returnTo } });
+    }
+  }, [user, loading, navigate, location.search, location.hash, toast]);
 
   if (loading) {
     return (
