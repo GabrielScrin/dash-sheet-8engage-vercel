@@ -6,7 +6,6 @@ export default function AuthCallback() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Verifica erros que o Supabase/Google podem ter retornado na URL
     const params = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
 
@@ -18,11 +17,10 @@ export default function AuthCallback() {
 
     if (urlError) {
       setError(decodeURIComponent(urlError));
+      setDetail(`URL: ${window.location.href}`);
       return;
     }
 
-    // Com fluxo implícito, o detectSessionInUrl extrai os tokens do hash automaticamente.
-    // Apenas escutamos o evento SIGNED_IN para redirecionar.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
         subscription.unsubscribe();
@@ -30,10 +28,10 @@ export default function AuthCallback() {
       }
     });
 
-    // Sessão já pode estar pronta antes do listener ser registrado
     supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
       if (sessionError) {
         setError(sessionError.message);
+        setDetail(`URL: ${window.location.href}`);
         subscription.unsubscribe();
         return;
       }
@@ -45,9 +43,13 @@ export default function AuthCallback() {
 
     const timeout = setTimeout(() => {
       subscription.unsubscribe();
-      setError(
-        'Sessão não criada. O Google autenticou mas o Supabase não recebeu os tokens. ' +
-        'Verifique se o Client Secret do Google está configurado em Authentication → Providers → Google no Supabase.'
+      const search = window.location.search;
+      const hash = window.location.hash;
+      const hasCode = search.includes('code=');
+      const hasToken = hash.includes('access_token=');
+      setError('Sessão não criada após autenticação Google.');
+      setDetail(
+        `search: "${search || '(vazio)'}" | hash: "${hash ? hash.slice(0, 60) + '...' : '(vazio)'}" | code=${hasCode} | token=${hasToken}`
       );
     }, 10000);
 
