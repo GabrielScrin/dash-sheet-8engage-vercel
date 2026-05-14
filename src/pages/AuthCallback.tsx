@@ -4,9 +4,9 @@ import { supabase } from '@/integrations/supabase/client';
 
 export default function AuthCallback() {
   const [error, setError] = useState<string | null>(null);
+  const [detail, setDetail] = useState<string | null>(null);
 
   useEffect(() => {
-    // Verifica se o Supabase redirecionou com erro na URL
     const params = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
 
@@ -21,6 +21,26 @@ export default function AuthCallback() {
       return;
     }
 
+    const code = params.get('code');
+
+    if (code) {
+      // Troca explícita do código PKCE por sessão
+      supabase.auth.exchangeCodeForSession(window.location.href).then(({ data, error: exchangeError }) => {
+        if (exchangeError) {
+          setError(`Falha ao trocar código por sessão: ${exchangeError.message}`);
+          setDetail(`Código recebido: ${code.slice(0, 12)}... | Erro: ${exchangeError.status ?? ''} ${exchangeError.name}`);
+          return;
+        }
+        if (data?.session) {
+          window.location.replace('/app/projects');
+        } else {
+          setError('Sessão vazia após troca de código. Tente novamente.');
+        }
+      });
+      return;
+    }
+
+    // Sem código na URL — tenta sessão já existente (ex: fluxo implícito)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
         subscription.unsubscribe();
@@ -40,16 +60,10 @@ export default function AuthCallback() {
       }
     });
 
-    const timeout = setTimeout(async () => {
+    const timeout = setTimeout(() => {
       subscription.unsubscribe();
-      // Tenta uma última vez antes de desistir
-      const { data: { session }, error: lastError } = await supabase.auth.getSession();
-      if (session) {
-        window.location.replace('/app/projects');
-        return;
-      }
-      const msg = lastError?.message || 'Sessão não criada após autenticação Google. Verifique as Redirect URLs no Supabase.';
-      setError(msg);
+      setError('Nenhum código de autenticação recebido do Google. O redirecionamento pode ter falhado.');
+      setDetail(`URL recebida: ${window.location.href}`);
     }, 8000);
 
     return () => {
@@ -66,6 +80,11 @@ export default function AuthCallback() {
         </div>
         <h2 className="text-lg font-semibold">Falha na autenticação</h2>
         <p className="max-w-sm text-sm text-muted-foreground">{error}</p>
+        {detail && (
+          <p className="max-w-sm rounded-md bg-muted px-3 py-2 text-left font-mono text-xs text-muted-foreground">
+            {detail}
+          </p>
+        )}
         <a
           href="/login"
           className="mt-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
