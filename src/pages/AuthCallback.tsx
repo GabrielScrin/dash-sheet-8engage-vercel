@@ -22,48 +22,36 @@ export default function AuthCallback() {
       return;
     }
 
-    // detectSessionInUrl:true já trocou o ?code= por sessão ao inicializar o cliente.
-    // Apenas escutamos o evento resultante — sem chamar exchangeCodeForSession manualmente.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
-        subscription.unsubscribe();
-        window.location.replace('/app/projects');
-      }
-    });
+    const code = params.get('code');
 
-    supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
-      if (sessionError) {
-        setError(sessionError.message);
-        setDetail(`URL: ${window.location.href}`);
-        subscription.unsubscribe();
+    if (!code) {
+      setError('Nenhum código de autenticação recebido na URL.');
+      setDetail(`URL: ${window.location.href}`);
+      return;
+    }
+
+    // detectSessionInUrl está desativado para não consumir o verifier antes de nós.
+    // Fazemos a troca manualmente com captura de erro.
+    supabase.auth.exchangeCodeForSession(window.location.href).then(({ data, error: exchangeError }) => {
+      if (exchangeError) {
+        const storageKeys = Object.keys(localStorage).filter(k =>
+          k.includes('supabase') || k.includes('pkce') || k.includes('verifier')
+        );
+        setError(`Falha na troca do código: ${exchangeError.message}`);
+        setDetail(
+          `status: ${exchangeError.status ?? 'n/a'} | ` +
+          `storage keys: ${storageKeys.length > 0 ? storageKeys.join(', ') : 'nenhuma'}`
+        );
         return;
       }
-      if (session) {
-        subscription.unsubscribe();
+
+      if (data?.session) {
         window.location.replace('/app/projects');
+      } else {
+        setError('Troca realizada mas sessão não foi retornada.');
+        setDetail(`URL: ${window.location.href}`);
       }
     });
-
-    const timeout = setTimeout(() => {
-      subscription.unsubscribe();
-
-      // Diagnóstico: verifica o que está na URL e no localStorage
-      const code = params.get('code');
-      const verifierKey = Object.keys(localStorage).find(k => k.includes('code-verifier') || k.includes('pkce'));
-      const hasVerifier = !!verifierKey;
-
-      setError('Sessão não criada após autenticação Google.');
-      setDetail(
-        `code na URL: ${code ? code.slice(0, 16) + '...' : 'ausente'} | ` +
-        `code-verifier no storage: ${hasVerifier ? `sim (${verifierKey})` : 'não encontrado'} | ` +
-        `hash: ${window.location.hash ? window.location.hash.slice(0, 40) : 'vazio'}`
-      );
-    }, 10000);
-
-    return () => {
-      subscription.unsubscribe();
-      clearTimeout(timeout);
-    };
   }, []);
 
   if (error) {
