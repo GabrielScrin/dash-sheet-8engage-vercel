@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 export default function AuthCallback() {
   const [error, setError] = useState<string | null>(null);
+  const [detail, setDetail] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -21,6 +22,8 @@ export default function AuthCallback() {
       return;
     }
 
+    // detectSessionInUrl:true já trocou o ?code= por sessão ao inicializar o cliente.
+    // Apenas escutamos o evento resultante — sem chamar exchangeCodeForSession manualmente.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
         subscription.unsubscribe();
@@ -43,13 +46,17 @@ export default function AuthCallback() {
 
     const timeout = setTimeout(() => {
       subscription.unsubscribe();
-      const search = window.location.search;
-      const hash = window.location.hash;
-      const hasCode = search.includes('code=');
-      const hasToken = hash.includes('access_token=');
+
+      // Diagnóstico: verifica o que está na URL e no localStorage
+      const code = params.get('code');
+      const verifierKey = Object.keys(localStorage).find(k => k.includes('code-verifier') || k.includes('pkce'));
+      const hasVerifier = !!verifierKey;
+
       setError('Sessão não criada após autenticação Google.');
       setDetail(
-        `search: "${search || '(vazio)'}" | hash: "${hash ? hash.slice(0, 60) + '...' : '(vazio)'}" | code=${hasCode} | token=${hasToken}`
+        `code na URL: ${code ? code.slice(0, 16) + '...' : 'ausente'} | ` +
+        `code-verifier no storage: ${hasVerifier ? `sim (${verifierKey})` : 'não encontrado'} | ` +
+        `hash: ${window.location.hash ? window.location.hash.slice(0, 40) : 'vazio'}`
       );
     }, 10000);
 
@@ -67,6 +74,11 @@ export default function AuthCallback() {
         </div>
         <h2 className="text-lg font-semibold">Falha na autenticação</h2>
         <p className="max-w-sm text-sm text-muted-foreground">{error}</p>
+        {detail && (
+          <p className="max-w-sm rounded-md bg-muted px-3 py-2 text-left font-mono text-xs text-muted-foreground break-all">
+            {detail}
+          </p>
+        )}
         <a
           href="/login"
           className="mt-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
