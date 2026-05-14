@@ -1,65 +1,37 @@
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 
-function getSafeReturnTo(value: string | null) {
-  if (!value) return '/app/projects';
-  if (!value.startsWith('/')) return '/app/projects';
-  if (value.startsWith('//')) return '/app/projects';
-  return value;
-}
-
 export default function AuthCallback() {
-  const { user, loading } = useAuth();
-  const navigate = useNavigate();
-
   useEffect(() => {
-    if (loading) return;
-
-    const url = new URL(window.location.href);
-    const returnTo = getSafeReturnTo(url.searchParams.get('next'));
-    const errorDescription = url.searchParams.get('error_description');
-
-    if (errorDescription) {
-      window.location.replace(`/login?error=${encodeURIComponent(errorDescription)}`);
-      return;
-    }
-
-    let active = true;
-
-    const waitForSession = async () => {
-      if (user) {
-        navigate(returnTo, { replace: true });
-        return;
+    // Com PKCE, o Supabase troca o ?code automaticamente via detectSessionInUrl.
+    // Escutamos o SIGNED_IN e redirecionamos com hard reload para garantir sessão limpa.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+        subscription.unsubscribe();
+        window.location.replace('/app/projects');
       }
+    });
 
-      for (let attempt = 0; attempt < 50 && active; attempt++) {
-        const { data, error } = await supabase.auth.getSession();
-
-        if (error) {
-          window.location.replace(`/login?error=${encodeURIComponent(error.message)}`);
-          return;
-        }
-
-        if (data.session?.user) {
-          navigate(returnTo, { replace: true });
-          return;
-        }
-
-        await new Promise((resolve) => window.setTimeout(resolve, 100));
+    // Fallback: se sessão já está pronta antes do evento
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        subscription.unsubscribe();
+        window.location.replace('/app/projects');
       }
+    });
 
-      window.location.replace('/login?error=session_not_found_callback');
-    };
-
-    void waitForSession();
+    // Timeout de segurança: 8 segundos
+    const timeout = setTimeout(() => {
+      subscription.unsubscribe();
+      window.location.replace('/login');
+    }, 8000);
 
     return () => {
-      active = false;
+      subscription.unsubscribe();
+      clearTimeout(timeout);
     };
-  }, [loading, navigate, user]);
+  }, []);
 
   return (
     <div className="flex min-h-screen items-center justify-center">
