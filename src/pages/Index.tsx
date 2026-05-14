@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight, Table2, BarChart3, Share2 } from 'lucide-react';
@@ -6,54 +6,16 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/hooks/use-toast';
 
 export default function Index() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-  const { toast } = useToast();
 
   useEffect(() => {
-    if (loading) return;
-
-    const params = new URLSearchParams(location.search);
-    const hashParams = new URLSearchParams(location.hash.startsWith('#') ? location.hash.slice(1) : location.hash);
-    const next = params.get('next');
-    const returnTo =
-      next && next.startsWith('/') && !next.startsWith('//')
-        ? next
-        : '/app/projects';
-
-    const errorDescription =
-      params.get('error_description') ||
-      hashParams.get('error_description') ||
-      hashParams.get('error');
-
-    if (user) {
-      navigate(returnTo, { replace: true });
-      return;
+    if (!loading && user) {
+      navigate('/app/projects', { replace: true });
     }
-
-    if (errorDescription) {
-      toast({
-        title: 'Falha no login',
-        description: decodeURIComponent(errorDescription),
-        variant: 'destructive',
-      });
-      navigate('/login', { replace: true, state: { from: returnTo } });
-      return;
-    }
-
-    if (next) {
-      toast({
-        title: 'Falha no login',
-        description: 'O Google retornou ao app, mas o Supabase nao abriu uma sessao valida.',
-        variant: 'destructive',
-      });
-      navigate('/login', { replace: true, state: { from: returnTo } });
-    }
-  }, [user, loading, navigate, location.search, location.hash, toast]);
+  }, [user, loading, navigate]);
 
   if (loading) {
     return (
@@ -64,26 +26,13 @@ export default function Index() {
   }
 
   const features = [
-    {
-      icon: Table2,
-      title: 'Conexão Direta',
-      description: 'Conecte suas planilhas Google Sheets sem intermediários',
-    },
-    {
-      icon: BarChart3,
-      title: 'Dashboards Visuais',
-      description: 'KPIs, tabelas, funis e métricas em tempo real',
-    },
-    {
-      icon: Share2,
-      title: 'Compartilhamento Fácil',
-      description: 'Gere links de acesso para seus clientes',
-    },
+    { icon: Table2, title: 'Conexão Direta', description: 'Conecte suas planilhas Google Sheets sem intermediários' },
+    { icon: BarChart3, title: 'Dashboards Visuais', description: 'KPIs, tabelas, funis e métricas em tempo real' },
+    { icon: Share2, title: 'Compartilhamento Fácil', description: 'Gere links de acesso para seus clientes' },
   ];
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="fixed top-0 z-50 w-full border-b bg-background/95 backdrop-blur">
         <div className="container flex h-16 items-center justify-between">
           <div className="flex items-center gap-2">
@@ -94,27 +43,20 @@ export default function Index() {
           </div>
           <div className="flex items-center gap-4">
             <ThemeToggle />
-            <Button onClick={() => navigate('/login')}>
-              Entrar
-            </Button>
+            <Button onClick={() => navigate('/login')}>Entrar</Button>
           </div>
         </div>
       </header>
 
-      {/* Hero */}
       <main className="container pt-32 pb-16">
         <div className="mx-auto max-w-3xl text-center">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-          >
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
               Dashboards inteligentes para suas{' '}
               <span className="text-primary">planilhas</span>
             </h1>
             <p className="mt-6 text-lg text-muted-foreground">
-              Conecte suas planilhas Google e transforme dados em dashboards visuais e interativos. 
+              Conecte suas planilhas Google e transforme dados em dashboards visuais e interativos.
               Compartilhe com seus clientes em segundos.
             </p>
             <div className="mt-10 flex items-center justify-center gap-4">
@@ -122,24 +64,19 @@ export default function Index() {
                 Começar Agora
                 <ArrowRight className="h-4 w-4" />
               </Button>
-              <Button size="lg" variant="outline">
-                Ver Demonstração
-              </Button>
+              <Button size="lg" variant="outline">Ver Demonstração</Button>
             </div>
           </motion.div>
 
-          {/* Features */}
           <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3, duration: 0.5 }}
             className="mt-20 grid gap-8 sm:grid-cols-3"
           >
             {features.map((feature, index) => (
               <motion.div
                 key={feature.title}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
+                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4 + index * 0.1 }}
                 className="rounded-lg border bg-card p-6 text-left shadow-sm"
               >
