@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight, Table2, BarChart3, Share2 } from 'lucide-react';
@@ -10,12 +10,20 @@ import { useAuth } from '@/contexts/AuthContext';
 export default function Index() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (!loading && user) {
-      navigate('/app/projects', { replace: true });
+      const params = new URLSearchParams(location.search);
+      const next = params.get('next');
+      const returnTo =
+        next && next.startsWith('/') && !next.startsWith('//')
+          ? next
+          : '/app/projects';
+
+      navigate(returnTo, { replace: true });
     }
-  }, [user, loading, navigate]);
+  }, [user, loading, navigate, location.search]);
 
   if (loading) {
     return (
