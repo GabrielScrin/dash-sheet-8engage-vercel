@@ -8,6 +8,48 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
+const sanitizeHeaderValue = (value: unknown) =>
+  String(value).replace(/[^\x00-\xff]/g, '');
+
+function installHeaderValueGuard() {
+  if (typeof Headers === 'undefined') return;
+
+  const headersPrototype = Headers.prototype as Headers & {
+    __latin1GuardInstalled?: boolean;
+  };
+
+  if (headersPrototype.__latin1GuardInstalled) return;
+
+  const originalSet = headersPrototype.set;
+  const originalAppend = headersPrototype.append;
+
+  headersPrototype.set = function guardedSet(name: string, value: string) {
+    try {
+      return originalSet.call(this, name, value);
+    } catch (error) {
+      if (error instanceof TypeError && String(error.message).includes('ISO-8859-1')) {
+        return originalSet.call(this, name, sanitizeHeaderValue(value));
+      }
+      throw error;
+    }
+  };
+
+  headersPrototype.append = function guardedAppend(name: string, value: string) {
+    try {
+      return originalAppend.call(this, name, value);
+    } catch (error) {
+      if (error instanceof TypeError && String(error.message).includes('ISO-8859-1')) {
+        return originalAppend.call(this, name, sanitizeHeaderValue(value));
+      }
+      throw error;
+    }
+  };
+
+  headersPrototype.__latin1GuardInstalled = true;
+}
+
+installHeaderValueGuard();
+
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   global: {
     // Force ASCII-only client metadata headers so the SDK can still build its
