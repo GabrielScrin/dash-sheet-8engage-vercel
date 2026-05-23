@@ -20,7 +20,6 @@ export default function AuthCallback() {
 
     const params = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
-
     const urlError =
       params.get('error_description') ||
       params.get('error') ||
@@ -33,34 +32,46 @@ export default function AuthCallback() {
       return;
     }
 
-    const code = params.get('code');
+    let done = false;
 
-    if (!code) {
-      setError('Nenhum codigo de autenticacao recebido na URL.');
-      setDetail(`URL: ${window.location.href}`);
-      return;
-    }
+    const finishWithSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session || done) return false;
+      done = true;
+      window.location.replace('/app/projects');
+      return true;
+    };
 
-    // detectSessionInUrl fica desativado para nao consumir o verifier antes daqui.
-    // A SDK espera apenas o auth code; o verifier fica persistido no storage.
-    supabase.auth.exchangeCodeForSession(code).then(({ data, error: exchangeError }) => {
-      if (exchangeError) {
-        const storageKeys = getRelevantStorageKeys();
-        setError(`Falha na troca do codigo: ${exchangeError.message}`);
-        setDetail(
-          `status: ${exchangeError.status ?? 'n/a'} | ` +
-          `storage keys: ${storageKeys.length > 0 ? storageKeys.join(', ') : 'nenhuma'}`
-        );
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (done) return;
+      if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+        done = true;
+        subscription.unsubscribe();
+        window.location.replace('/app/projects');
+      }
+    });
+
+    finishWithSession();
+
+    const timeout = window.setTimeout(async () => {
+      if (await finishWithSession()) {
+        subscription.unsubscribe();
         return;
       }
 
-      if (data?.session) {
-        window.location.replace('/app/projects');
-      } else {
-        setError('Troca realizada mas sessao nao foi retornada.');
-        setDetail(`URL: ${window.location.href}`);
-      }
-    });
+      const storageKeys = getRelevantStorageKeys();
+      setError('Sessao nao foi criada pelo callback OAuth do Supabase.');
+      setDetail(
+        `status: n/a | storage keys: ${storageKeys.length > 0 ? storageKeys.join(', ') : 'nenhuma'}`
+      );
+      subscription.unsubscribe();
+    }, 8000);
+
+    return () => {
+      done = true;
+      subscription.unsubscribe();
+      window.clearTimeout(timeout);
+    };
   }, []);
 
   if (error) {
