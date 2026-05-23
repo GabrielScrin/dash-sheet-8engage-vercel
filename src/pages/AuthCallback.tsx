@@ -19,6 +19,9 @@ export default function AuthCallback() {
       return;
     }
 
+    const accessToken = hashParams.get('access_token');
+    const refreshToken = hashParams.get('refresh_token');
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
         subscription.unsubscribe();
@@ -26,7 +29,21 @@ export default function AuthCallback() {
       }
     });
 
-    supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
+    const finishSession = async () => {
+      if (accessToken && refreshToken) {
+        const { error: setSessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+
+        if (setSessionError) {
+          setError(setSessionError.message);
+          subscription.unsubscribe();
+          return;
+        }
+      }
+
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) {
         setError(sessionError.message);
         subscription.unsubscribe();
@@ -37,13 +54,16 @@ export default function AuthCallback() {
         subscription.unsubscribe();
         window.location.replace('/app/projects');
       }
-    });
+    };
+
+    void finishSession();
 
     const timeout = window.setTimeout(() => {
       subscription.unsubscribe();
       setError(
-        'Sessao nao criada. O Google autenticou mas o Supabase nao recebeu os tokens. ' +
-        'Verifique se o Client Secret do Google esta configurado em Authentication > Providers > Google no Supabase.'
+        accessToken && refreshToken
+          ? 'Os tokens voltaram do Supabase, mas a sessao nao foi persistida no navegador.'
+          : 'Sessao nao criada. O Google autenticou mas o Supabase nao devolveu tokens para o app.'
       );
     }, 10000);
 
