@@ -2,9 +2,14 @@ import { useEffect, useState } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 const SUPABASE_STORAGE_KEY = 'sb-hzstynttwwjlhvywemml-auth-token';
+
+function parseJwtPayload(token: string) {
+  const [, payload] = token.split('.');
+  const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+  return JSON.parse(atob(padded));
+}
 
 export default function AuthCallback() {
   const [error, setError] = useState<string | null>(null);
@@ -36,27 +41,28 @@ export default function AuthCallback() {
     const finishSession = async () => {
       if (accessToken && refreshToken) {
         try {
-          const userResponse = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-            method: 'GET',
-            headers: {
-              apikey: SUPABASE_PUBLISHABLE_KEY,
-              Authorization: `Bearer ${accessToken}`,
-            },
-          });
-
-          if (!userResponse.ok) {
-            const body = await userResponse.text();
-            setError(`Falha ao buscar usuario da sessao: ${userResponse.status} ${body}`);
-            subscription.unsubscribe();
-            return;
-          }
-
-          const user = await userResponse.json();
+          const payload = parseJwtPayload(accessToken);
           const expiresAt = Number(hashParams.get('expires_at') || 0);
           const expiresIn = Number(hashParams.get('expires_in') || 0);
           const providerToken = hashParams.get('provider_token');
           const providerRefreshToken = hashParams.get('provider_refresh_token');
           const tokenType = hashParams.get('token_type') || 'bearer';
+          const nowIso = new Date().toISOString();
+
+          const user = {
+            id: payload.sub,
+            aud: payload.aud,
+            role: payload.role,
+            email: payload.email,
+            phone: payload.phone || '',
+            app_metadata: payload.app_metadata || {},
+            user_metadata: payload.user_metadata || {},
+            identities: [],
+            factors: null,
+            created_at: nowIso,
+            updated_at: nowIso,
+            is_anonymous: payload.is_anonymous || false,
+          };
 
           const session = {
             access_token: accessToken,
