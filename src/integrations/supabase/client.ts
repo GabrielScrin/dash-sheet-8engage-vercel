@@ -6,16 +6,24 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const LATIN1_HEADER_VALUE = /^[\u0000-\u00FF]*$/;
 
+function collectHeaderPairs(headersInit?: HeadersInit): Array<[string, string]> {
+  if (!headersInit) return [];
+
+  if (typeof Headers !== 'undefined' && headersInit instanceof Headers) {
+    return Array.from(headersInit.entries());
+  }
+
+  if (Array.isArray(headersInit)) {
+    return headersInit.map(([key, value]) => [String(key), String(value)]);
+  }
+
+  return Object.entries(headersInit).map(([key, value]) => [key, String(value)]);
+}
+
 function sanitizeHeaders(headersInit?: HeadersInit): Record<string, string> {
   const sanitized: Record<string, string> = {};
 
-  if (!headersInit) {
-    return sanitized;
-  }
-
-  const appendIfSafe = (rawKey: unknown, rawValue: unknown) => {
-    const key = String(rawKey);
-    const value = String(rawValue);
+  const appendIfSafe = (key: string, value: string) => {
     const lowerKey = key.toLowerCase();
 
     // Work around browsers rejecting non Latin-1 header values coming from
@@ -31,19 +39,7 @@ function sanitizeHeaders(headersInit?: HeadersInit): Record<string, string> {
     sanitized[key] = value;
   };
 
-  if (typeof Headers !== 'undefined' && headersInit instanceof Headers) {
-    headersInit.forEach((value, key) => appendIfSafe(key, value));
-    return sanitized;
-  }
-
-  if (Array.isArray(headersInit)) {
-    for (const [key, value] of headersInit) {
-      appendIfSafe(key, value);
-    }
-    return sanitized;
-  }
-
-  for (const [key, value] of Object.entries(headersInit)) {
+  for (const [key, value] of collectHeaderPairs(headersInit)) {
     appendIfSafe(key, value);
   }
 
@@ -51,9 +47,38 @@ function sanitizeHeaders(headersInit?: HeadersInit): Record<string, string> {
 }
 
 const safeFetch: typeof fetch = async (input, init) => {
+  const requestUrl =
+    typeof input === 'string'
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url;
+
+  const mergedHeaders = new Headers();
+
+  if (typeof Request !== 'undefined' && input instanceof Request) {
+    for (const [key, value] of input.headers.entries()) {
+      mergedHeaders.set(key, value);
+    }
+  }
+
+  for (const [key, value] of collectHeaderPairs(init?.headers)) {
+    mergedHeaders.set(key, value);
+  }
+
+  if (requestUrl.startsWith(SUPABASE_URL)) {
+    if (!mergedHeaders.has('apikey')) {
+      mergedHeaders.set('apikey', SUPABASE_PUBLISHABLE_KEY);
+    }
+
+    if (!mergedHeaders.has('Authorization')) {
+      mergedHeaders.set('Authorization', `Bearer ${SUPABASE_PUBLISHABLE_KEY}`);
+    }
+  }
+
   return fetch(input, {
     ...init,
-    headers: sanitizeHeaders(init?.headers),
+    headers: sanitizeHeaders(mergedHeaders),
   });
 };
 
