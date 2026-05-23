@@ -54,25 +54,25 @@ const safeFetch: typeof fetch = async (input, init) => {
         ? input.toString()
         : input.url;
 
-  const mergedHeaders = new Headers();
+  const mergedHeaders: Record<string, string> = {};
 
   if (typeof Request !== 'undefined' && input instanceof Request) {
     for (const [key, value] of input.headers.entries()) {
-      mergedHeaders.set(key, value);
+      mergedHeaders[key] = value;
     }
   }
 
   for (const [key, value] of collectHeaderPairs(init?.headers)) {
-    mergedHeaders.set(key, value);
+    mergedHeaders[key] = value;
   }
 
   if (requestUrl.startsWith(SUPABASE_URL)) {
-    if (!mergedHeaders.has('apikey')) {
-      mergedHeaders.set('apikey', SUPABASE_PUBLISHABLE_KEY);
+    if (!('apikey' in mergedHeaders)) {
+      mergedHeaders.apikey = SUPABASE_PUBLISHABLE_KEY;
     }
 
-    if (!mergedHeaders.has('Authorization')) {
-      mergedHeaders.set('Authorization', `Bearer ${SUPABASE_PUBLISHABLE_KEY}`);
+    if (!('Authorization' in mergedHeaders)) {
+      mergedHeaders.Authorization = `Bearer ${SUPABASE_PUBLISHABLE_KEY}`;
     }
   }
 
