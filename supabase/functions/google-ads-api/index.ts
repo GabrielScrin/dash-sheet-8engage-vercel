@@ -18,10 +18,121 @@ type GoogleAdsConnectionRow = {
 };
 
 const GOOGLE_OAUTH_URL = "https://www.googleapis.com/oauth2/v3/token";
+const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_ADS_API_BASE = "https://googleads.googleapis.com/v20";
+const GOOGLE_ADS_SCOPE = "https://www.googleapis.com/auth/adwords";
 
 const normalizeCustomerId = (value: string | null | undefined) =>
   String(value || "").replace(/\D/g, "");
+
+function base64UrlEncode(input: string) {
+  const bytes = new TextEncoder().encode(input);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlDecode(input: string) {
+  const padded = input.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(input.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function getOriginFromRequest(req: Request) {
+  const origin = req.headers.get("origin");
+  if (origin) return origin.replace(/\/$/, "");
+
+  const referer = req.headers.get("referer");
+  if (!referer) return null;
+
+  try {
+    return new URL(referer).origin;
+  } catch {
+    return null;
+  }
+}
+
+function getGoogleCredentials() {
+  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+  const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+  if (!clientId || !clientSecret) {
+    throw new Error("Secrets GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET nao configuradas");
+  }
+  return { clientId, clientSecret };
+}
+
+function getGoogleAdsRedirectUri(req: Request) {
+  const configured = Deno.env.get("GOOGLE_ADS_REDIRECT_URI");
+  if (configured) return configured;
+
+  const origin = getOriginFromRequest(req);
+  if (!origin) {
+    throw new Error("Nao foi possivel determinar o redirect URI do Google Ads");
+  }
+
+  return `${origin}/app/google-ads/callback`;
+}
+
+async function getAuthenticatedUser(
+  supabaseUrl: string,
+  supabaseAnonKey: string,
+  authHeader: string | null,
+) {
+  if (!authHeader?.startsWith("Bearer ")) {
+    throw new Error("Missing authorization");
+  }
+
+  const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: { user }, error } = await userClient.auth.getUser();
+  if (error || !user) {
+    throw new Error("Invalid or expired token");
+  }
+  return user;
+}
+
+async function assertProjectOwner(adminClient: ReturnType<typeof createClient>, projectId: string, userId: string) {
+  const { data, error } = await adminClient
+    .from("projects")
+    .select("id")
+    .eq("id", projectId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new Error("Projeto nao encontrado para este usuario");
+  }
+}
+
+async function exchangeGoogleAuthCode(code: string, redirectUri: string) {
+  const { clientId, clientSecret } = getGoogleCredentials();
+  const response = await fetch(GOOGLE_OAUTH_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: redirectUri,
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data?.access_token) {
+    throw new Error(data?.error_description || data?.error || "Falha ao conectar Google Ads");
+  }
+
+  return data as {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+    scope?: string;
+    token_type?: string;
+  };
+}
 
 async function refreshAccessToken(connection: GoogleAdsConnectionRow) {
   const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
@@ -242,6 +353,92 @@ Deno.serve(async (req) => {
     const shareTokenHeader = req.headers.get("x-share-token");
 
     const body = await req.json().catch(() => ({}));
+    const requestProjectId = String(body?.projectId || "").trim();
+
+    if (action === "authorize") {
+      const user = await getAuthenticatedUser(supabaseUrl, supabaseAnonKey, authHeader);
+      if (!requestProjectId) throw new Error("projectId e obrigatorio");
+      await assertProjectOwner(adminClient, requestProjectId, user.id);
+
+      const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+      if (!clientId) throw new Error("Secret GOOGLE_CLIENT_ID nao configurada");
+
+      const redirectUri = getGoogleAdsRedirectUri(req);
+      const scope = Deno.env.get("GOOGLE_ADS_SCOPES") || GOOGLE_ADS_SCOPE;
+      const returnTo = String(body?.returnTo || `/app/projects/${requestProjectId}/config?step=2`);
+      const state = base64UrlEncode(JSON.stringify({ projectId: requestProjectId, returnTo }));
+
+      const googleAuthUrl = new URL(GOOGLE_AUTH_URL);
+      googleAuthUrl.searchParams.set("client_id", clientId);
+      googleAuthUrl.searchParams.set("redirect_uri", redirectUri);
+      googleAuthUrl.searchParams.set("response_type", "code");
+      googleAuthUrl.searchParams.set("scope", scope);
+      googleAuthUrl.searchParams.set("access_type", "offline");
+      googleAuthUrl.searchParams.set("prompt", "consent select_account");
+      googleAuthUrl.searchParams.set("include_granted_scopes", "true");
+      googleAuthUrl.searchParams.set("state", state);
+
+      return new Response(JSON.stringify({ url: googleAuthUrl.toString(), redirect_uri: redirectUri, scope }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "callback") {
+      const user = await getAuthenticatedUser(supabaseUrl, supabaseAnonKey, authHeader);
+      const code = String(body?.code || "").trim();
+      if (!code) throw new Error("Codigo de autorizacao ausente");
+
+      let stateProjectId = "";
+      try {
+        const decoded = JSON.parse(base64UrlDecode(String(body?.state || "")));
+        stateProjectId = String(decoded?.projectId || "").trim();
+      } catch {
+        stateProjectId = "";
+      }
+
+      const callbackProjectId = requestProjectId || stateProjectId;
+      if (!callbackProjectId) throw new Error("projectId e obrigatorio");
+      await assertProjectOwner(adminClient, callbackProjectId, user.id);
+
+      const redirectUri = getGoogleAdsRedirectUri(req);
+      const tokenData = await exchangeGoogleAuthCode(code, redirectUri);
+
+      const { data: existingConnection } = await adminClient
+        .from("project_google_ads_connections")
+        .select("refresh_token, customer_id, login_customer_id, customer_name, currency_code, time_zone")
+        .eq("project_id", callbackProjectId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      const refreshToken = tokenData.refresh_token || existingConnection?.refresh_token;
+      if (!refreshToken) {
+        throw new Error("O Google nao retornou refresh_token. Tente conectar novamente com consentimento.");
+      }
+
+      const { error: upsertError } = await adminClient
+        .from("project_google_ads_connections")
+        .upsert(
+          {
+            project_id: callbackProjectId,
+            user_id: user.id,
+            refresh_token: refreshToken,
+            customer_id: existingConnection?.customer_id ?? null,
+            login_customer_id: existingConnection?.login_customer_id ?? null,
+            customer_name: existingConnection?.customer_name ?? null,
+            currency_code: existingConnection?.currency_code ?? null,
+            time_zone: existingConnection?.time_zone ?? null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "project_id" },
+        );
+
+      if (upsertError) throw upsertError;
+
+      return new Response(JSON.stringify({ success: true, projectId: callbackProjectId }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const projectId = String(body?.projectId || "").trim();
     if (!projectId) throw new Error("projectId é obrigatório");
 
