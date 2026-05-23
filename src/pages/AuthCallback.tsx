@@ -41,6 +41,11 @@ export default function AuthCallback() {
           subscription.unsubscribe();
           return;
         }
+
+        subscription.unsubscribe();
+        window.history.replaceState({}, document.title, '/auth/callback');
+        window.location.replace('/app/projects');
+        return;
       }
 
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
