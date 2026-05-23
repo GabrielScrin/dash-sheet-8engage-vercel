@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+const SUPABASE_STORAGE_KEY = 'sb-hzstynttwwjlhvywemml-auth-token';
+
 export default function AuthCallback() {
   const [error, setError] = useState<string | null>(null);
 
@@ -31,21 +35,54 @@ export default function AuthCallback() {
 
     const finishSession = async () => {
       if (accessToken && refreshToken) {
-        const { error: setSessionError } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
+        try {
+          const userResponse = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+            method: 'GET',
+            headers: {
+              apikey: SUPABASE_PUBLISHABLE_KEY,
+              Authorization: `Bearer ${accessToken}`,
+            },
+          });
 
-        if (setSessionError) {
-          setError(setSessionError.message);
+          if (!userResponse.ok) {
+            const body = await userResponse.text();
+            setError(`Falha ao buscar usuario da sessao: ${userResponse.status} ${body}`);
+            subscription.unsubscribe();
+            return;
+          }
+
+          const user = await userResponse.json();
+          const expiresAt = Number(hashParams.get('expires_at') || 0);
+          const expiresIn = Number(hashParams.get('expires_in') || 0);
+          const providerToken = hashParams.get('provider_token');
+          const providerRefreshToken = hashParams.get('provider_refresh_token');
+          const tokenType = hashParams.get('token_type') || 'bearer';
+
+          const session = {
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            expires_at: expiresAt,
+            expires_in: expiresIn,
+            token_type: tokenType,
+            provider_token: providerToken,
+            provider_refresh_token: providerRefreshToken,
+            user,
+          };
+
+          window.localStorage.setItem(SUPABASE_STORAGE_KEY, JSON.stringify(session));
+          subscription.unsubscribe();
+          window.history.replaceState({}, document.title, '/auth/callback');
+          window.location.replace('/app/projects');
+          return;
+        } catch (manualSessionError) {
+          setError(
+            manualSessionError instanceof Error
+              ? manualSessionError.message
+              : 'Falha ao persistir a sessao manualmente.'
+          );
           subscription.unsubscribe();
           return;
         }
-
-        subscription.unsubscribe();
-        window.history.replaceState({}, document.title, '/auth/callback');
-        window.location.replace('/app/projects');
-        return;
       }
 
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
