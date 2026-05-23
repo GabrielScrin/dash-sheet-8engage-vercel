@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 
 const SUPABASE_STORAGE_KEY = 'sb-hzstynttwwjlhvywemml-auth-token';
 
@@ -30,13 +29,6 @@ export default function AuthCallback() {
 
     const accessToken = hashParams.get('access_token');
     const refreshToken = hashParams.get('refresh_token');
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
-        subscription.unsubscribe();
-        window.location.replace('/app/projects');
-      }
-    });
 
     const finishSession = async () => {
       if (accessToken && refreshToken) {
@@ -76,7 +68,6 @@ export default function AuthCallback() {
           };
 
           window.localStorage.setItem(SUPABASE_STORAGE_KEY, JSON.stringify(session));
-          subscription.unsubscribe();
           window.history.replaceState({}, document.title, '/auth/callback');
           window.location.replace('/app/projects');
           return;
@@ -86,28 +77,14 @@ export default function AuthCallback() {
               ? manualSessionError.message
               : 'Falha ao persistir a sessao manualmente.'
           );
-          subscription.unsubscribe();
           return;
         }
-      }
-
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) {
-        setError(sessionError.message);
-        subscription.unsubscribe();
-        return;
-      }
-
-      if (session) {
-        subscription.unsubscribe();
-        window.location.replace('/app/projects');
       }
     };
 
     void finishSession();
 
     const timeout = window.setTimeout(() => {
-      subscription.unsubscribe();
       setError(
         accessToken && refreshToken
           ? 'Os tokens voltaram do Supabase, mas a sessao nao foi persistida no navegador.'
@@ -116,7 +93,6 @@ export default function AuthCallback() {
     }, 10000);
 
     return () => {
-      subscription.unsubscribe();
       window.clearTimeout(timeout);
     };
   }, []);

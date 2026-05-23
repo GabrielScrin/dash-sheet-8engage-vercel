@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
+const SUPABASE_STORAGE_KEY = 'sb-hzstynttwwjlhvywemml-auth-token';
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -19,6 +21,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const bootstrapSession = () => {
+      try {
+        const rawSession = window.localStorage.getItem(SUPABASE_STORAGE_KEY);
+        if (!rawSession) return;
+
+        const parsedSession = JSON.parse(rawSession) as Session;
+        setSession(parsedSession);
+        setUser(parsedSession.user ?? null);
+      } catch (error) {
+        console.error('Error restoring session from storage:', error);
+        window.localStorage.removeItem(SUPABASE_STORAGE_KEY);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         setSession(session);
@@ -54,11 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    bootstrapSession();
 
     return () => subscription.unsubscribe();
   }, []);
@@ -80,13 +94,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    window.localStorage.removeItem(SUPABASE_STORAGE_KEY);
     setUser(null);
     setSession(null);
   };
 
   const getGoogleAccessToken = async (): Promise<string | null> => {
-    const { data } = await supabase.auth.getSession();
-    return data.session?.provider_token ?? null;
+    return session?.provider_token ?? null;
   };
 
   return (
