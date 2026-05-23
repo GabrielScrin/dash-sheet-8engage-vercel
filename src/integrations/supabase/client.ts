@@ -4,11 +4,41 @@ import type { Database } from './types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const LATIN1_HEADER_VALUE = /^[\u0000-\u00FF]*$/;
+
+const safeFetch: typeof fetch = async (input, init) => {
+  const incomingHeaders = new Headers(init?.headers);
+  const sanitizedHeaders = new Headers();
+
+  incomingHeaders.forEach((value, key) => {
+    const lowerKey = key.toLowerCase();
+
+    // Work around browsers rejecting non Latin-1 header values coming from
+    // Supabase's auto-detected client platform/runtime metadata.
+    if (lowerKey.startsWith('x-supabase-client-')) {
+      return;
+    }
+
+    if (!LATIN1_HEADER_VALUE.test(value)) {
+      return;
+    }
+
+    sanitizedHeaders.set(key, value);
+  });
+
+  return fetch(input, {
+    ...init,
+    headers: sanitizedHeaders,
+  });
+};
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  global: {
+    fetch: safeFetch,
+  },
   auth: {
     persistSession: true,
     autoRefreshToken: true,
