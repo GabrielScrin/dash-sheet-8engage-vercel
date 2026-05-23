@@ -30,71 +30,62 @@ export default function AuthCallback() {
     const accessToken = hashParams.get('access_token');
     const refreshToken = hashParams.get('refresh_token');
 
-    const finishSession = async () => {
-      if (accessToken && refreshToken) {
-        try {
-          const payload = parseJwtPayload(accessToken);
-          const expiresAt = Number(hashParams.get('expires_at') || 0);
-          const expiresIn = Number(hashParams.get('expires_in') || 0);
-          const providerToken = hashParams.get('provider_token');
-          const providerRefreshToken = hashParams.get('provider_refresh_token');
-          const tokenType = hashParams.get('token_type') || 'bearer';
-          const nowIso = new Date().toISOString();
+    if (accessToken && refreshToken) {
+      try {
+        const payload = parseJwtPayload(accessToken);
+        const expiresAt = Number(hashParams.get('expires_at') || payload.exp || 0);
+        const expiresIn = Number(hashParams.get('expires_in') || Math.max(expiresAt - Math.floor(Date.now() / 1000), 0));
+        const providerToken = hashParams.get('provider_token');
+        const providerRefreshToken = hashParams.get('provider_refresh_token');
+        const tokenType = hashParams.get('token_type') || 'bearer';
+        const nowIso = new Date().toISOString();
 
-          const user = {
-            id: payload.sub,
-            aud: payload.aud,
-            role: payload.role,
-            email: payload.email,
-            phone: payload.phone || '',
-            app_metadata: payload.app_metadata || {},
-            user_metadata: payload.user_metadata || {},
-            identities: [],
-            factors: null,
-            created_at: nowIso,
-            updated_at: nowIso,
-            is_anonymous: payload.is_anonymous || false,
-          };
+        const user = {
+          id: payload.sub,
+          aud: payload.aud,
+          role: payload.role,
+          email: payload.email,
+          phone: payload.phone || '',
+          app_metadata: payload.app_metadata || {},
+          user_metadata: payload.user_metadata || {},
+          identities: [],
+          factors: null,
+          created_at: nowIso,
+          updated_at: nowIso,
+          is_anonymous: payload.is_anonymous || false,
+        };
 
-          const session = {
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            expires_at: expiresAt,
-            expires_in: expiresIn,
-            token_type: tokenType,
-            provider_token: providerToken,
-            provider_refresh_token: providerRefreshToken,
-            user,
-          };
+        const session = {
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          expires_at: expiresAt,
+          expires_in: expiresIn,
+          token_type: tokenType,
+          provider_token: providerToken,
+          provider_refresh_token: providerRefreshToken,
+          user,
+        };
 
-          window.localStorage.setItem(SUPABASE_STORAGE_KEY, JSON.stringify(session));
-          window.history.replaceState({}, document.title, '/auth/callback');
-          window.location.replace('/app/projects');
-          return;
-        } catch (manualSessionError) {
-          setError(
-            manualSessionError instanceof Error
-              ? manualSessionError.message
-              : 'Falha ao persistir a sessao manualmente.'
-          );
-          return;
+        const serializedSession = JSON.stringify(session);
+        window.localStorage.setItem(SUPABASE_STORAGE_KEY, serializedSession);
+
+        if (window.localStorage.getItem(SUPABASE_STORAGE_KEY) !== serializedSession) {
+          throw new Error('O navegador recusou gravar a sessao no localStorage.');
         }
+
+        window.history.replaceState({}, document.title, '/auth/callback');
+        window.location.assign('/app/projects');
+      } catch (manualSessionError) {
+        setError(
+          manualSessionError instanceof Error
+            ? manualSessionError.message
+            : 'Falha ao persistir a sessao manualmente.'
+        );
       }
-    };
+      return;
+    }
 
-    void finishSession();
-
-    const timeout = window.setTimeout(() => {
-      setError(
-        accessToken && refreshToken
-          ? 'Os tokens voltaram do Supabase, mas a sessao nao foi persistida no navegador.'
-          : 'Sessao nao criada. O Google autenticou mas o Supabase nao devolveu tokens para o app.'
-      );
-    }, 10000);
-
-    return () => {
-      window.clearTimeout(timeout);
-    };
+    setError('Sessao nao criada. O Google autenticou mas o Supabase nao devolveu tokens para o app.');
   }, []);
 
   if (error) {

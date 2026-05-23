@@ -21,24 +21,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const bootstrapSession = () => {
+    const bootstrapSession = (): Session | null => {
       try {
         const rawSession = window.localStorage.getItem(SUPABASE_STORAGE_KEY);
-        if (!rawSession) return;
+        if (!rawSession) return null;
 
         const parsedSession = JSON.parse(rawSession) as Session;
         setSession(parsedSession);
         setUser(parsedSession.user ?? null);
+        return parsedSession;
       } catch (error) {
         console.error('Error restoring session from storage:', error);
         window.localStorage.removeItem(SUPABASE_STORAGE_KEY);
+        return null;
       } finally {
         setLoading(false);
       }
     };
 
+    const restoredSession = bootstrapSession();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (event === 'INITIAL_SESSION' && !session && restoredSession) {
+          setLoading(false);
+          return;
+        }
+
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
@@ -71,8 +80,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
     );
-
-    bootstrapSession();
 
     return () => subscription.unsubscribe();
   }, []);
