@@ -4017,6 +4017,26 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     return cards;
   }, [metaTotalsRow, project?.source_type, googleAdsInsightsQuery.data, sourceConfig, dateRange]);
 
+  const googleAdsBigNumbers = useMemo(() => {
+    if (project?.source_type !== 'meta_ads') return [];
+    const totals = googleAdsInsightsQuery.data;
+    if (!totals) return [];
+
+    const spend = Number(totals.spend || 0);
+    const impressions = Number(totals.impressions || 0);
+    const clicks = Number(totals.clicks || 0);
+    const conversions = Number(totals.conversions || 0);
+
+    return [
+      { label: 'Google Investimento', value: spend, format: 'currency' as const },
+      { label: 'Google Impressoes', value: impressions, format: 'number' as const },
+      { label: 'Google Cliques', value: clicks, format: 'number' as const },
+      { label: 'Google Conversoes', value: conversions, format: 'number' as const },
+      { label: 'Google CPC', value: clicks > 0 ? spend / clicks : 0, format: 'currency' as const },
+      { label: 'Google CPA', value: conversions > 0 ? spend / conversions : 0, format: 'currency' as const },
+    ];
+  }, [googleAdsInsightsQuery.data, project?.source_type]);
+
   const bigNumbersToRender =
     project?.source_type === 'meta_ads'
       ? metaBigNumbers
@@ -4361,6 +4381,28 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                       })}
                     </div>
                   )}
+                </section>
+              )}
+
+              {project?.source_type === 'meta_ads' && googleAdsBigNumbers.length > 0 && (
+                <section>
+                  <div className="mb-4">
+                    <h3 className="text-lg font-semibold">Google Ads</h3>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      Metricas vindas da conexao Google Ads deste projeto.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                    {googleAdsBigNumbers.map((kpi, index) => (
+                      <BigNumberCard
+                        key={kpi.label}
+                        label={kpi.label}
+                        value={kpi.value}
+                        format={kpi.format}
+                        delay={index * 0.08}
+                      />
+                    ))}
+                  </div>
                 </section>
               )}
 
