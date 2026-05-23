@@ -7,11 +7,16 @@ export default function AuthCallback() {
   const [detail, setDetail] = useState<string | null>(null);
 
   useEffect(() => {
-    const getRelevantCookieKeys = () =>
-      document.cookie
-        .split('; ')
-        .map(cookie => cookie.split('=')[0])
-        .filter(key => key.includes('supabase') || key.includes('pkce') || key.includes('verifier'));
+    const getRelevantStorageKeys = () => {
+      const allKeys = [
+        ...Object.keys(window.localStorage),
+        ...Object.keys(window.sessionStorage),
+      ];
+
+      return allKeys.filter(key =>
+        key.includes('supabase') || key.includes('pkce') || key.includes('verifier')
+      );
+    };
 
     const params = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
@@ -40,11 +45,11 @@ export default function AuthCallback() {
     // A SDK espera apenas o auth code; o verifier fica persistido no storage.
     supabase.auth.exchangeCodeForSession(code).then(({ data, error: exchangeError }) => {
       if (exchangeError) {
-        const cookieKeys = getRelevantCookieKeys();
+        const storageKeys = getRelevantStorageKeys();
         setError(`Falha na troca do codigo: ${exchangeError.message}`);
         setDetail(
           `status: ${exchangeError.status ?? 'n/a'} | ` +
-          `cookie keys: ${cookieKeys.length > 0 ? cookieKeys.join(', ') : 'nenhuma'}`
+          `storage keys: ${storageKeys.length > 0 ? storageKeys.join(', ') : 'nenhuma'}`
         );
         return;
       }
