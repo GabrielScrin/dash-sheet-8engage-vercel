@@ -4,20 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 
 export default function AuthCallback() {
   const [error, setError] = useState<string | null>(null);
-  const [detail, setDetail] = useState<string | null>(null);
 
   useEffect(() => {
-    const getRelevantStorageKeys = () => {
-      const allKeys = [
-        ...Object.keys(window.localStorage),
-        ...Object.keys(window.sessionStorage),
-      ];
-
-      return allKeys.filter(key =>
-        key.includes('supabase') || key.includes('pkce') || key.includes('verifier')
-      );
-    };
-
     const params = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
     const urlError =
@@ -28,47 +16,38 @@ export default function AuthCallback() {
 
     if (urlError) {
       setError(decodeURIComponent(urlError));
-      setDetail(`URL: ${window.location.href}`);
       return;
     }
 
-    let done = false;
-
-    const finishWithSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session || done) return false;
-      done = true;
-      window.location.replace('/app/projects');
-      return true;
-    };
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (done) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
-        done = true;
         subscription.unsubscribe();
         window.location.replace('/app/projects');
       }
     });
 
-    finishWithSession();
-
-    const timeout = window.setTimeout(async () => {
-      if (await finishWithSession()) {
+    supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
+      if (sessionError) {
+        setError(sessionError.message);
         subscription.unsubscribe();
         return;
       }
 
-      const storageKeys = getRelevantStorageKeys();
-      setError('Sessao nao foi criada pelo callback OAuth do Supabase.');
-      setDetail(
-        `status: n/a | storage keys: ${storageKeys.length > 0 ? storageKeys.join(', ') : 'nenhuma'}`
-      );
+      if (session) {
+        subscription.unsubscribe();
+        window.location.replace('/app/projects');
+      }
+    });
+
+    const timeout = window.setTimeout(() => {
       subscription.unsubscribe();
-    }, 8000);
+      setError(
+        'Sessao nao criada. O Google autenticou mas o Supabase nao recebeu os tokens. ' +
+        'Verifique se o Client Secret do Google esta configurado em Authentication > Providers > Google no Supabase.'
+      );
+    }, 10000);
 
     return () => {
-      done = true;
       subscription.unsubscribe();
       window.clearTimeout(timeout);
     };
@@ -82,11 +61,6 @@ export default function AuthCallback() {
         </div>
         <h2 className="text-lg font-semibold">Falha na autenticacao</h2>
         <p className="max-w-sm text-sm text-muted-foreground">{error}</p>
-        {detail && (
-          <p className="max-w-sm break-all rounded-md bg-muted px-3 py-2 text-left font-mono text-xs text-muted-foreground">
-            {detail}
-          </p>
-        )}
         <a
           href="/login"
           className="mt-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
