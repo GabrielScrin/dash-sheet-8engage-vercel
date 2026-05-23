@@ -4,90 +4,18 @@ import type { Database } from './types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-const LATIN1_HEADER_VALUE = /^[\u0000-\u00FF]*$/;
-
-function collectHeaderPairs(headersInit?: HeadersInit): Array<[string, string]> {
-  if (!headersInit) return [];
-
-  if (typeof Headers !== 'undefined' && headersInit instanceof Headers) {
-    return Array.from(headersInit.entries());
-  }
-
-  if (Array.isArray(headersInit)) {
-    return headersInit.map(([key, value]) => [String(key), String(value)]);
-  }
-
-  return Object.entries(headersInit).map(([key, value]) => [key, String(value)]);
-}
-
-function sanitizeHeaders(headersInit?: HeadersInit): Record<string, string> {
-  const sanitized: Record<string, string> = {};
-
-  const appendIfSafe = (key: string, value: string) => {
-    const lowerKey = key.toLowerCase();
-
-    // Work around browsers rejecting non Latin-1 header values coming from
-    // Supabase's auto-detected client platform/runtime metadata.
-    if (lowerKey.startsWith('x-supabase-client-')) {
-      return;
-    }
-
-    if (!LATIN1_HEADER_VALUE.test(value)) {
-      return;
-    }
-
-    sanitized[key] = value;
-  };
-
-  for (const [key, value] of collectHeaderPairs(headersInit)) {
-    appendIfSafe(key, value);
-  }
-
-  return sanitized;
-}
-
-const safeFetch: typeof fetch = async (input, init) => {
-  const requestUrl =
-    typeof input === 'string'
-      ? input
-      : input instanceof URL
-        ? input.toString()
-        : input.url;
-
-  const mergedHeaders: Record<string, string> = {};
-
-  if (typeof Request !== 'undefined' && input instanceof Request) {
-    for (const [key, value] of input.headers.entries()) {
-      mergedHeaders[key] = value;
-    }
-  }
-
-  for (const [key, value] of collectHeaderPairs(init?.headers)) {
-    mergedHeaders[key] = value;
-  }
-
-  if (requestUrl.startsWith(SUPABASE_URL)) {
-    if (!('apikey' in mergedHeaders)) {
-      mergedHeaders.apikey = SUPABASE_PUBLISHABLE_KEY;
-    }
-
-    if (!('Authorization' in mergedHeaders)) {
-      mergedHeaders.Authorization = `Bearer ${SUPABASE_PUBLISHABLE_KEY}`;
-    }
-  }
-
-  return fetch(input, {
-    ...init,
-    headers: sanitizeHeaders(mergedHeaders),
-  });
-};
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   global: {
-    fetch: safeFetch,
+    // Override Supabase's platform/runtime auto-headers. They were the source
+    // of invalid non Latin-1 header values in this browser, while allowing the
+    // SDK to keep managing apikey/Authorization internally.
+    headers: {
+      'X-Client-Info': 'supabase-js-web/2.93.1',
+    },
   },
   auth: {
     persistSession: true,
