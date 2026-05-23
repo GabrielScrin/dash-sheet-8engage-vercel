@@ -6,11 +6,16 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const LATIN1_HEADER_VALUE = /^[\u0000-\u00FF]*$/;
 
-const safeFetch: typeof fetch = async (input, init) => {
-  const incomingHeaders = new Headers(init?.headers);
-  const sanitizedHeaders = new Headers();
+function sanitizeHeaders(headersInit?: HeadersInit): Record<string, string> {
+  const sanitized: Record<string, string> = {};
 
-  incomingHeaders.forEach((value, key) => {
+  if (!headersInit) {
+    return sanitized;
+  }
+
+  const appendIfSafe = (rawKey: unknown, rawValue: unknown) => {
+    const key = String(rawKey);
+    const value = String(rawValue);
     const lowerKey = key.toLowerCase();
 
     // Work around browsers rejecting non Latin-1 header values coming from
@@ -23,12 +28,32 @@ const safeFetch: typeof fetch = async (input, init) => {
       return;
     }
 
-    sanitizedHeaders.set(key, value);
-  });
+    sanitized[key] = value;
+  };
 
+  if (typeof Headers !== 'undefined' && headersInit instanceof Headers) {
+    headersInit.forEach((value, key) => appendIfSafe(key, value));
+    return sanitized;
+  }
+
+  if (Array.isArray(headersInit)) {
+    for (const [key, value] of headersInit) {
+      appendIfSafe(key, value);
+    }
+    return sanitized;
+  }
+
+  for (const [key, value] of Object.entries(headersInit)) {
+    appendIfSafe(key, value);
+  }
+
+  return sanitized;
+}
+
+const safeFetch: typeof fetch = async (input, init) => {
   return fetch(input, {
     ...init,
-    headers: sanitizedHeaders,
+    headers: sanitizeHeaders(init?.headers),
   });
 };
 
