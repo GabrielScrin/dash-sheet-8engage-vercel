@@ -10,11 +10,15 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   global: {
-    // Override Supabase's platform/runtime auto-headers. They were the source
-    // of invalid non Latin-1 header values in this browser, while allowing the
-    // SDK to keep managing apikey/Authorization internally.
+    // Force ASCII-only client metadata headers so the SDK can still build its
+    // internal Headers object on Windows/Brave without tripping over invalid
+    // platform version strings.
     headers: {
       'X-Client-Info': 'supabase-js-web/2.93.1',
+      'X-Supabase-Client-Platform': 'web',
+      'X-Supabase-Client-Platform-Version': '0',
+      'X-Supabase-Client-Runtime': 'browser',
+      'X-Supabase-Client-Runtime-Version': '0',
     },
   },
   auth: {
