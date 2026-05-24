@@ -68,5 +68,6 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     autoRefreshToken: true,
     detectSessionInUrl: false,
     flowType: 'implicit',
+    lock: async (_name, _acquireTimeout, fn) => fn(),
   }
 });
