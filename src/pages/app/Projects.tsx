@@ -40,6 +40,14 @@ interface Project {
   updated_at: string;
 }
 
+const withTimeout = <T,>(promise: Promise<T>, ms = 15000) =>
+  Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      window.setTimeout(() => reject(new Error('Tempo esgotado ao consultar projetos. Recarregue e tente novamente.')), ms),
+    ),
+  ]);
+
 export default function Projects() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -56,10 +64,12 @@ export default function Projects() {
 
   const fetchProjects = async () => {
     try {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*')
-        .order('updated_at', { ascending: false });
+      const { data, error } = await withTimeout(
+        supabase
+          .from('projects')
+          .select('*')
+          .order('updated_at', { ascending: false }),
+      );
 
       if (error) throw error;
       setProjects(data || []);
