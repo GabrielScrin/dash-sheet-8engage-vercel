@@ -124,7 +124,7 @@ export default function ProjectConfig() {
   }, [currentStep, project?.source_type, project?.source_config?.ad_account_id]);
 
   const loadGoogleAdsConnection = async () => {
-    if (!project?.id || project.source_type !== 'meta_ads') return;
+    if (!project?.id) return;
 
     const { data, error } = await supabase
       .from('project_google_ads_connections')
@@ -165,6 +165,90 @@ export default function ProjectConfig() {
   useEffect(() => {
     void loadGoogleAdsConnection();
   }, [project?.id, project?.source_type, toast]);
+
+  const renderGoogleAdsConnectionCard = (description: string) => (
+    <Card>
+      <CardHeader>
+        <CardTitle>Google Ads</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => void connectGoogleAds()} disabled={googleAdsConnecting || googleAdsValidating || googleAdsListing}>
+            {googleAdsConnecting ? 'Conectando...' : googleAdsConnected ? 'Reconectar Google Ads' : 'Conectar Google Ads'}
+          </Button>
+          <Button onClick={() => void validateGoogleAdsConnection()} disabled={!googleAdsConnected || googleAdsValidating || googleAdsListing}>
+            {googleAdsValidating ? 'Validando...' : 'Validar conexao'}
+          </Button>
+          <Button variant="outline" onClick={() => void listGoogleAdsCustomers()} disabled={!googleAdsConnected || googleAdsValidating || googleAdsListing}>
+            {googleAdsListing ? 'Listando...' : 'Listar contas acessiveis'}
+          </Button>
+        </div>
+
+        {googleAdsConnected ? (
+          <div className="rounded-lg border bg-muted/40 p-4">
+            <p className="font-medium">Conexao Google Ads ativa</p>
+            <p className="text-sm text-muted-foreground">
+              Liste as contas acessiveis e selecione qual cliente Google Ads alimenta este dashboard.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+            <p className="font-medium text-amber-800">Google Ads nao conectado</p>
+            <p className="text-sm text-amber-700">
+              Clique em conectar para autorizar a conta Google que tem acesso ao Google Ads.
+            </p>
+          </div>
+        )}
+
+        {googleAdsValidation && (
+          <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+            <p className="font-medium text-green-800">{googleAdsValidation.name}</p>
+            <p className="text-sm text-green-700">
+              ID: {googleAdsValidation.id}
+              {googleAdsValidation.currencyCode ? ` • ${googleAdsValidation.currencyCode}` : ''}
+              {googleAdsValidation.timeZone ? ` • ${googleAdsValidation.timeZone}` : ''}
+            </p>
+          </div>
+        )}
+
+        {googleAdsCustomers.length > 0 && (
+          <div className="space-y-3">
+            <div>
+              <h4 className="font-medium">Contas acessiveis</h4>
+              <p className="text-sm text-muted-foreground">
+                Clique em uma conta para vincular o customer_id ao projeto.
+              </p>
+            </div>
+            <div className="grid gap-3">
+              {googleAdsCustomers.map((customer) => {
+                const isSelected = googleAdsValidation?.id === customer.id;
+                return (
+                  <Card
+                    key={customer.id}
+                    className={`cursor-pointer transition-colors hover:border-primary ${isSelected ? 'border-primary bg-primary/5' : ''}`}
+                    onClick={() => void saveGoogleAdsCustomerSelection(customer)}
+                  >
+                    <CardContent className="p-4 flex justify-between items-center">
+                      <div>
+                        <p className="font-medium">{customer.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          ID: {customer.id}
+                          {customer.currencyCode ? ` • ${customer.currencyCode}` : ''}
+                          {customer.timeZone ? ` • ${customer.timeZone}` : ''}
+                        </p>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 
   useEffect(() => {
     if (metaConnected !== null) return;
@@ -890,6 +974,7 @@ export default function ProjectConfig() {
                 />
               </div>
             )}
+            {renderGoogleAdsConnectionCard('Escolha a conta Google Ads deste projeto para exibir, no preview, as campanhas com gasto do periodo selecionado abaixo da visualizacao Google da planilha.')}
           </div>
         );
       case 3:

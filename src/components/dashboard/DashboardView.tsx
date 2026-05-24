@@ -41,6 +41,26 @@ interface MetaSourceConfig {
   [key: string]: unknown;
 }
 
+interface GoogleAdsCampaignMetricRow {
+  id: string;
+  name: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  averageCpc: number;
+  conversions: number;
+  costPerConversion: number;
+  uniqueUsers: number;
+  averageFrequency: number;
+  averageCpv: number;
+  videoViews: number;
+  videoQuartile25: number;
+  videoQuartile50: number;
+  videoQuartile75: number;
+  videoQuartile100: number;
+}
+
 function getSourceConfig(config: unknown): MetaSourceConfig | null {
   if (config && typeof config === 'object' && !Array.isArray(config)) {
     return config as MetaSourceConfig;
@@ -767,6 +787,33 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       }
     },
     enabled: project?.source_type === 'meta_ads' && !!projectId,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const googleAdsCampaignOverviewQuery = useQuery({
+    queryKey: [
+      'google-ads-campaign-overview',
+      projectId,
+      dateRange?.from ? dateRange.from.toISOString() : null,
+      dateRange?.to ? dateRange.to.toISOString() : null,
+      activeTab,
+      isGoogleSheetView,
+    ],
+    queryFn: async () => {
+      const startDate = dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : format(subDays(new Date(), 30), 'yyyy-MM-dd');
+      const endDate = format(dateRange?.to || new Date(), 'yyyy-MM-dd');
+      try {
+        const data = await invokeEdge('google-ads-api?action=portal-overview', { projectId, startDate, endDate });
+        return {
+          totals: (data?.totals ?? null) as { spend: number; impressions: number; conversions: number } | null,
+          campaigns: Array.isArray(data?.campaigns) ? (data.campaigns as GoogleAdsCampaignMetricRow[]) : [],
+        };
+      } catch {
+        return { totals: null, campaigns: [] as GoogleAdsCampaignMetricRow[] };
+      }
+    },
+    enabled: !!projectId && isGoogleSheetView,
     retry: false,
     staleTime: 5 * 60 * 1000,
   });
@@ -4073,6 +4120,40 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     ];
   }, [activeTab, googleDistributionSummary, isGoogleSheetView]);
 
+  const googleAdsConnectedCampaigns = useMemo(
+    () => (googleAdsCampaignOverviewQuery.data?.campaigns || []).filter((campaign) => Number(campaign.spend || 0) > 0),
+    [googleAdsCampaignOverviewQuery.data],
+  );
+
+  const googleAdsConnectedMetricColumns = useMemo(() => {
+    const baseColumns: Array<{ key: keyof GoogleAdsCampaignMetricRow; label: string; format: 'number' | 'currency' | 'decimal' }> = [
+      { key: 'spend', label: 'Custo', format: 'currency' },
+      { key: 'uniqueUsers', label: 'Usuarios exclusivos', format: 'number' },
+      { key: 'impressions', label: 'Impressoes', format: 'number' },
+      { key: 'averageFrequency', label: 'Freq. media impr. / usuario', format: 'decimal' },
+      { key: 'averageCpv', label: 'CPV medio do TrueView', format: 'currency' },
+      { key: 'videoViews', label: 'Visualizacao do TrueView', format: 'number' },
+    ];
+
+    if (activeTab === 'descoberta') {
+      return [
+        ...baseColumns,
+        { key: 'clicks' as const, label: 'Cliques', format: 'number' as const },
+        { key: 'averageCpc' as const, label: 'CPC medio', format: 'currency' as const },
+        { key: 'conversions' as const, label: 'Conversoes', format: 'number' as const },
+        { key: 'costPerConversion' as const, label: 'Custo / Conv.', format: 'currency' as const },
+      ];
+    }
+
+    return [
+      ...baseColumns,
+      { key: 'videoQuartile25' as const, label: 'Video assistido ate 25%', format: 'number' as const },
+      { key: 'videoQuartile50' as const, label: 'Video assistido ate 50%', format: 'number' as const },
+      { key: 'videoQuartile75' as const, label: 'Video assistido ate 75%', format: 'number' as const },
+      { key: 'videoQuartile100' as const, label: 'Video assistido ate 100%', format: 'number' as const },
+    ];
+  }, [activeTab]);
+
   const isLoading =
     loadingProject ||
     (loadingMappings && !(shareToken && initialMappings)) ||
@@ -4199,6 +4280,70 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
 
     return warnings;
   })();
+
+  const renderGoogleAdsConnectedCampaignSection = () => {
+    if (!isGoogleSheetView) return null;
+
+    const selectedGoogleAccountName = String(sourceConfig?.google_ads_customer_name || '').trim();
+    const selectedGoogleAccountId = String(sourceConfig?.google_ads_customer_id || '').trim();
+
+    return (
+      <section>
+        <div className="mb-4 flex flex-col gap-1">
+          <h3 className="text-lg font-semibold">Google Ads direto da conexao</h3>
+          <p className="text-sm text-muted-foreground">
+            Campanhas com gasto no periodo selecionado, usando a conta escolhida no projeto.
+          </p>
+          {(selectedGoogleAccountName || selectedGoogleAccountId) && (
+            <p className="text-xs text-muted-foreground">
+              Conta vinculada: {selectedGoogleAccountName || selectedGoogleAccountId}
+              {selectedGoogleAccountName && selectedGoogleAccountId ? ` (${selectedGoogleAccountId})` : ''}
+            </p>
+          )}
+        </div>
+
+        {googleAdsCampaignOverviewQuery.isLoading ? (
+          <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+            Carregando campanhas da conexao Google Ads...
+          </div>
+        ) : googleAdsConnectedCampaigns.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+            Nenhuma campanha com gasto foi encontrada na conta Google Ads para o periodo selecionado.
+          </div>
+        ) : (
+          <div className="rounded-md border bg-card text-card-foreground shadow-sm overflow-x-auto">
+            <table className="w-full min-w-[1100px] text-sm">
+              <thead className="bg-muted/50 border-b">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">Campanha</th>
+                  {googleAdsConnectedMetricColumns.map((metric) => (
+                    <th key={String(metric.key)} className="px-4 py-3 text-center font-medium">
+                      {metric.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {googleAdsConnectedCampaigns.map((campaign) => (
+                  <tr key={campaign.id} className="hover:bg-muted/30">
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{campaign.name}</div>
+                      <div className="text-xs text-muted-foreground">{campaign.id}</div>
+                    </td>
+                    {googleAdsConnectedMetricColumns.map((metric) => (
+                      <td key={`${campaign.id}-${String(metric.key)}`} className="px-4 py-3 text-center">
+                        {formatDistributionMetricValue(Number(campaign[metric.key] || 0), metric.format)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    );
+  };
 
   return (
     <div className="container py-6">
@@ -4802,6 +4947,8 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                   </div>
                 </section>
               )}
+
+              {renderGoogleAdsConnectedCampaignSection()}
             </motion.div>
           </TabsContent>
 
@@ -5055,6 +5202,8 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                   </div>
                 </section>
               )}
+
+              {renderGoogleAdsConnectedCampaignSection()}
             </motion.div>
           </TabsContent>
         </AnimatePresence>

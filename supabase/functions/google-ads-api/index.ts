@@ -528,7 +528,9 @@ Deno.serve(async (req) => {
       ].join(" ");
 
       const campaignsQuery = [
-        "SELECT campaign.id, campaign.name, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions",
+        "SELECT campaign.id, campaign.name, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions,",
+        "metrics.unique_users, metrics.average_impression_frequency_per_user, metrics.average_cpv, metrics.video_views,",
+        "metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate, metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate",
         "FROM campaign",
         `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
         "AND campaign.status != 'REMOVED'",
@@ -538,7 +540,20 @@ Deno.serve(async (req) => {
         results?: Array<{
           segments?: { date?: string };
           campaign?: { id?: string; name?: string };
-          metrics?: { costMicros?: string; impressions?: string; clicks?: string; conversions?: number };
+          metrics?: {
+            costMicros?: string;
+            impressions?: string;
+            clicks?: string;
+            conversions?: number;
+            uniqueUsers?: string;
+            averageImpressionFrequencyPerUser?: number;
+            averageCpv?: number;
+            videoViews?: string;
+            videoQuartileP25Rate?: number;
+            videoQuartileP50Rate?: number;
+            videoQuartileP75Rate?: number;
+            videoQuartileP100Rate?: number;
+          };
         }>;
       }>;
 
@@ -568,27 +583,85 @@ Deno.serve(async (req) => {
       }
       const timeseries = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 
-      const byCampaign = new Map<string, { id: string; name: string; spend: number; conversions: number; impressions: number; clicks: number }>();
+      const byCampaign = new Map<string, {
+        id: string;
+        name: string;
+        spend: number;
+        conversions: number;
+        impressions: number;
+        clicks: number;
+        uniqueUsers: number;
+        averageFrequency: number;
+        averageCpv: number;
+        videoViews: number;
+        videoQuartile25: number;
+        videoQuartile50: number;
+        videoQuartile75: number;
+        videoQuartile100: number;
+      }>();
       for (const batch of (Array.isArray(campRes) ? campRes : [campRes])) {
         for (const result of (batch.results || [])) {
           const id = String(result.campaign?.id || "");
           if (!id) continue;
           const name = String(result.campaign?.name || id);
-          const cur = byCampaign.get(id) || { id, name, spend: 0, conversions: 0, impressions: 0, clicks: 0 };
+          const videoViews = Number(result.metrics?.videoViews || 0);
+          const quartile25Rate = Number(result.metrics?.videoQuartileP25Rate || 0);
+          const quartile50Rate = Number(result.metrics?.videoQuartileP50Rate || 0);
+          const quartile75Rate = Number(result.metrics?.videoQuartileP75Rate || 0);
+          const quartile100Rate = Number(result.metrics?.videoQuartileP100Rate || 0);
+          const cur = byCampaign.get(id) || {
+            id,
+            name,
+            spend: 0,
+            conversions: 0,
+            impressions: 0,
+            clicks: 0,
+            uniqueUsers: 0,
+            averageFrequency: 0,
+            averageCpv: 0,
+            videoViews: 0,
+            videoQuartile25: 0,
+            videoQuartile50: 0,
+            videoQuartile75: 0,
+            videoQuartile100: 0,
+          };
           cur.spend += Number(result.metrics?.costMicros || 0) / 1_000_000;
           cur.conversions += Number(result.metrics?.conversions || 0);
           cur.impressions += Number(result.metrics?.impressions || 0);
           cur.clicks += Number(result.metrics?.clicks || 0);
+          cur.uniqueUsers += Number(result.metrics?.uniqueUsers || 0);
+          cur.averageFrequency = Number(result.metrics?.averageImpressionFrequencyPerUser || cur.averageFrequency || 0);
+          cur.averageCpv = Number(result.metrics?.averageCpv || cur.averageCpv || 0);
+          cur.videoViews += videoViews;
+          cur.videoQuartile25 += videoViews > 0 ? videoViews * (quartile25Rate / 100) : 0;
+          cur.videoQuartile50 += videoViews > 0 ? videoViews * (quartile50Rate / 100) : 0;
+          cur.videoQuartile75 += videoViews > 0 ? videoViews * (quartile75Rate / 100) : 0;
+          cur.videoQuartile100 += videoViews > 0 ? videoViews * (quartile100Rate / 100) : 0;
           byCampaign.set(id, cur);
         }
       }
-      const campaigns = Array.from(byCampaign.values()).map((c) => ({
-        id: c.id,
-        name: c.name,
-        spend: c.spend,
-        ctr: c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0,
-        conversions: c.conversions,
-      }));
+      const campaigns = Array.from(byCampaign.values())
+        .filter((c) => c.spend > 0)
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          spend: c.spend,
+          impressions: c.impressions,
+          clicks: c.clicks,
+          ctr: c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0,
+          averageCpc: c.clicks > 0 ? c.spend / c.clicks : 0,
+          conversions: c.conversions,
+          costPerConversion: c.conversions > 0 ? c.spend / c.conversions : 0,
+          uniqueUsers: c.uniqueUsers,
+          averageFrequency: c.averageFrequency,
+          averageCpv: c.averageCpv,
+          videoViews: c.videoViews,
+          videoQuartile25: c.videoQuartile25,
+          videoQuartile50: c.videoQuartile50,
+          videoQuartile75: c.videoQuartile75,
+          videoQuartile100: c.videoQuartile100,
+        }))
+        .sort((a, b) => b.spend - a.spend);
 
       const totals = timeseries.reduce(
         (acc, r) => ({ spend: acc.spend + r.spend, conversions: acc.conversions + r.conversions, impressions: acc.impressions + r.impressions }),
