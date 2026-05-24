@@ -52,6 +52,9 @@ const supabaseFetch: typeof fetch = async (input, init = {}) => {
   const nativeFetch = globalThis.fetch.bind(globalThis);
   const timeoutController = new AbortController();
   const callerSignal = init.signal;
+  const requestHeaders =
+    init.headers ??
+    (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined);
   let callerAbortHandler: (() => void) | null = null;
 
   if (callerSignal?.aborted) {
@@ -61,18 +64,23 @@ const supabaseFetch: typeof fetch = async (input, init = {}) => {
     callerSignal.addEventListener('abort', callerAbortHandler, { once: true });
   }
 
-  const timeoutId = window.setTimeout(() => {
+  const timeoutId = globalThis.setTimeout(() => {
     timeoutController.abort(createAbortError());
   }, 15_000);
 
   try {
-    return await nativeFetch(input, {
+    const safeInit: RequestInit = {
       ...init,
-      headers: normalizeHeaders(init.headers),
       signal: timeoutController.signal,
-    });
+    };
+
+    if (requestHeaders) {
+      safeInit.headers = normalizeHeaders(requestHeaders);
+    }
+
+    return await nativeFetch(input, safeInit);
   } finally {
-    window.clearTimeout(timeoutId);
+    globalThis.clearTimeout(timeoutId);
     if (callerSignal && callerAbortHandler) {
       callerSignal.removeEventListener('abort', callerAbortHandler);
     }
