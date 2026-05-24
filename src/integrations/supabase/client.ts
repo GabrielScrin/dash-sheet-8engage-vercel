@@ -4,6 +4,7 @@ import type { Database } from './types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_STORAGE_KEY = 'sb-hzstynttwwjlhvywemml-auth-token';
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
@@ -50,7 +51,59 @@ function installHeaderValueGuard() {
 
 installHeaderValueGuard();
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+async function readStoredSession() {
+  if (typeof window === 'undefined') return null;
+
+  const rawSession = window.localStorage.getItem(SUPABASE_STORAGE_KEY);
+  if (!rawSession) return null;
+
+  try {
+    const session = JSON.parse(rawSession);
+    const expiresAt = Number(session?.expires_at || 0);
+    const refreshToken = String(session?.refresh_token || '');
+
+    if (expiresAt && expiresAt * 1000 - Date.now() > 60_000) {
+      return session;
+    }
+
+    if (!refreshToken) {
+      window.localStorage.removeItem(SUPABASE_STORAGE_KEY);
+      return null;
+    }
+
+    const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    const refreshed = await response.json();
+    if (!response.ok || !refreshed?.access_token) {
+      window.localStorage.removeItem(SUPABASE_STORAGE_KEY);
+      return null;
+    }
+
+    const nextSession = {
+      ...session,
+      ...refreshed,
+      refresh_token: refreshed.refresh_token || session.refresh_token,
+      expires_at: refreshed.expires_at || Math.floor(Date.now() / 1000) + Number(refreshed.expires_in || 3600),
+      user: refreshed.user || session.user,
+    };
+
+    window.localStorage.setItem(SUPABASE_STORAGE_KEY, JSON.stringify(nextSession));
+    return nextSession;
+  } catch {
+    window.localStorage.removeItem(SUPABASE_STORAGE_KEY);
+    return null;
+  }
+}
+
+const supabaseClient = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   global: {
     // Force ASCII-only client metadata headers so the SDK can still build its
     // internal Headers object on Windows/Brave without tripping over invalid
@@ -71,3 +124,10 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     lock: async (_name, _acquireTimeout, fn) => fn(),
   }
 });
+
+supabaseClient.auth.getSession = async () => {
+  const session = await readStoredSession();
+  return { data: { session }, error: null };
+};
+
+export const supabase = supabaseClient;
