@@ -12,6 +12,73 @@ const SUPABASE_STORAGE_KEY = 'sb-hzstynttwwjlhvywemml-auth-token';
 const sanitizeHeaderValue = (value: unknown) =>
   String(value).replace(/[^\x00-\xff]/g, '');
 
+const normalizeHeaders = (headers?: HeadersInit) => {
+  const normalized = new Headers();
+
+  if (!headers) return normalized;
+
+  if (headers instanceof Headers) {
+    headers.forEach((value, name) => {
+      normalized.set(name, sanitizeHeaderValue(value));
+    });
+    return normalized;
+  }
+
+  if (Array.isArray(headers)) {
+    headers.forEach(([name, value]) => {
+      normalized.append(name, sanitizeHeaderValue(value));
+    });
+    return normalized;
+  }
+
+  Object.entries(headers).forEach(([name, value]) => {
+    if (value !== undefined) {
+      normalized.set(name, sanitizeHeaderValue(value));
+    }
+  });
+
+  return normalized;
+};
+
+const createAbortError = () => {
+  if (typeof DOMException !== 'undefined') {
+    return new DOMException('Tempo esgotado ao consultar o Supabase.', 'AbortError');
+  }
+
+  return new Error('Tempo esgotado ao consultar o Supabase.');
+};
+
+const supabaseFetch: typeof fetch = async (input, init = {}) => {
+  const nativeFetch = globalThis.fetch.bind(globalThis);
+  const timeoutController = new AbortController();
+  const callerSignal = init.signal;
+  let callerAbortHandler: (() => void) | null = null;
+
+  if (callerSignal?.aborted) {
+    timeoutController.abort(callerSignal.reason);
+  } else if (callerSignal) {
+    callerAbortHandler = () => timeoutController.abort(callerSignal.reason);
+    callerSignal.addEventListener('abort', callerAbortHandler, { once: true });
+  }
+
+  const timeoutId = window.setTimeout(() => {
+    timeoutController.abort(createAbortError());
+  }, 15_000);
+
+  try {
+    return await nativeFetch(input, {
+      ...init,
+      headers: normalizeHeaders(init.headers),
+      signal: timeoutController.signal,
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
+    if (callerSignal && callerAbortHandler) {
+      callerSignal.removeEventListener('abort', callerAbortHandler);
+    }
+  }
+};
+
 function installHeaderValueGuard() {
   if (typeof Headers === 'undefined') return;
 
@@ -71,7 +138,7 @@ async function readStoredSession() {
       return null;
     }
 
-    const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+    const response = await supabaseFetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
       method: 'POST',
       headers: {
         apikey: SUPABASE_PUBLISHABLE_KEY,
@@ -105,6 +172,7 @@ async function readStoredSession() {
 
 const supabaseClient = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   global: {
+    fetch: supabaseFetch,
     // Force ASCII-only client metadata headers so the SDK can still build its
     // internal Headers object on Windows/Brave without tripping over invalid
     // platform version strings.
