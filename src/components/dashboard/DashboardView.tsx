@@ -798,7 +798,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       dateRange?.from ? dateRange.from.toISOString() : null,
       dateRange?.to ? dateRange.to.toISOString() : null,
       activeTab,
-      isGoogleSheetView,
+      project?.source_type === 'sheet' && sheetDashboardSource === 'google',
     ],
     queryFn: async () => {
       const startDate = dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : format(subDays(new Date(), 30), 'yyyy-MM-dd');
@@ -813,7 +813,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
         return { totals: null, campaigns: [] as GoogleAdsCampaignMetricRow[] };
       }
     },
-    enabled: !!projectId && isGoogleSheetView,
+    enabled: !!projectId && project?.source_type === 'sheet' && sheetDashboardSource === 'google',
     retry: false,
     staleTime: 5 * 60 * 1000,
   });
