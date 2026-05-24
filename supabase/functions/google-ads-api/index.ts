@@ -211,7 +211,33 @@ async function listAccessibleCustomers(accessToken: string, connection: GoogleAd
     .map(normalizeCustomerId)
     .filter(Boolean);
 
-  const customers: Array<{ id: string; name: string; currencyCode: string | null; timeZone: string | null }> = [];
+  const customersById = new Map<string, {
+    id: string;
+    name: string;
+    currencyCode: string | null;
+    timeZone: string | null;
+    loginCustomerId: string | null;
+  }>();
+
+  const upsertCustomer = (customer: {
+    id: string;
+    name?: string | null;
+    currencyCode?: string | null;
+    timeZone?: string | null;
+    loginCustomerId?: string | null;
+  }) => {
+    const id = normalizeCustomerId(customer.id);
+    if (!id) return;
+
+    const current = customersById.get(id);
+    customersById.set(id, {
+      id,
+      name: String(customer.name || current?.name || id),
+      currencyCode: customer.currencyCode ?? current?.currencyCode ?? null,
+      timeZone: customer.timeZone ?? current?.timeZone ?? null,
+      loginCustomerId: customer.loginCustomerId ?? current?.loginCustomerId ?? connection.login_customer_id ?? null,
+    });
+  };
 
   for (const customerId of customerIds) {
     try {
@@ -229,7 +255,7 @@ async function listAccessibleCustomers(accessToken: string, connection: GoogleAd
       );
 
       const customer = details?.[0]?.results?.[0]?.customer;
-      customers.push({
+      upsertCustomer({
         id: customerId,
         name: String(customer?.descriptiveName || customerId),
         currencyCode: customer?.currencyCode || null,
@@ -237,7 +263,7 @@ async function listAccessibleCustomers(accessToken: string, connection: GoogleAd
         loginCustomerId: connection.login_customer_id,
       });
     } catch {
-      customers.push({
+      upsertCustomer({
         id: customerId,
         name: customerId,
         currencyCode: null,
@@ -245,9 +271,57 @@ async function listAccessibleCustomers(accessToken: string, connection: GoogleAd
         loginCustomerId: connection.login_customer_id,
       });
     }
+
+    try {
+      const hierarchy = await googleAdsRequest<Array<{
+        results?: Array<{
+          customerClient?: {
+            id?: string;
+            descriptiveName?: string;
+            currencyCode?: string;
+            timeZone?: string;
+            level?: number;
+          };
+        }>;
+      }>>(
+        accessToken,
+        connection,
+        `/customers/${customerId}/googleAds:searchStream`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            query: [
+              "SELECT customer_client.id, customer_client.descriptive_name, customer_client.currency_code,",
+              "customer_client.time_zone, customer_client.level",
+              "FROM customer_client",
+              "WHERE customer_client.level <= 1",
+            ].join(" "),
+          }),
+        },
+      );
+
+      for (const batch of hierarchy || []) {
+        for (const row of batch.results || []) {
+          const client = row.customerClient;
+          const clientId = normalizeCustomerId(String(client?.id || ""));
+          if (!clientId) continue;
+
+          const isChildOfManager = clientId !== customerId;
+          upsertCustomer({
+            id: clientId,
+            name: client?.descriptiveName || clientId,
+            currencyCode: client?.currencyCode || null,
+            timeZone: client?.timeZone || null,
+            loginCustomerId: isChildOfManager ? customerId : (connection.login_customer_id || null),
+          });
+        }
+      }
+    } catch {
+      // Some accessible accounts are not managers or don't expose hierarchy. Keep the direct lookup result.
+    }
   }
 
-  return customers;
+  return Array.from(customersById.values()).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
 async function validateCustomer(accessToken: string, connection: GoogleAdsConnectionRow) {
