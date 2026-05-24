@@ -54,10 +54,10 @@ function getOriginFromRequest(req: Request) {
 }
 
 function getGoogleCredentials() {
-  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
-  const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+  const clientId = Deno.env.get("GOOGLE_ADS_CLIENT_ID") || Deno.env.get("GOOGLE_CLIENT_ID");
+  const clientSecret = Deno.env.get("GOOGLE_ADS_CLIENT_SECRET") || Deno.env.get("GOOGLE_CLIENT_SECRET");
   if (!clientId || !clientSecret) {
-    throw new Error("Secrets GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET nao configuradas");
+    throw new Error("Secrets GOOGLE_ADS_CLIENT_ID/SECRET ou GOOGLE_CLIENT_ID/SECRET nao configuradas");
   }
   return { clientId, clientSecret };
 }
@@ -135,8 +135,8 @@ async function exchangeGoogleAuthCode(code: string, redirectUri: string) {
 }
 
 async function refreshAccessToken(connection: GoogleAdsConnectionRow) {
-  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
-  const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+  const clientId = Deno.env.get("GOOGLE_ADS_CLIENT_ID") || Deno.env.get("GOOGLE_CLIENT_ID");
+  const clientSecret = Deno.env.get("GOOGLE_ADS_CLIENT_SECRET") || Deno.env.get("GOOGLE_CLIENT_SECRET");
   if (!clientId || !clientSecret) {
     throw new Error("Secrets GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET não configuradas");
   }
@@ -360,8 +360,8 @@ Deno.serve(async (req) => {
       if (!requestProjectId) throw new Error("projectId e obrigatorio");
       await assertProjectOwner(adminClient, requestProjectId, user.id);
 
-      const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
-      if (!clientId) throw new Error("Secret GOOGLE_CLIENT_ID nao configurada");
+      const clientId = Deno.env.get("GOOGLE_ADS_CLIENT_ID") || Deno.env.get("GOOGLE_CLIENT_ID");
+      if (!clientId) throw new Error("Secret GOOGLE_ADS_CLIENT_ID ou GOOGLE_CLIENT_ID nao configurada");
 
       const redirectUri = getGoogleAdsRedirectUri(req);
       const scope = Deno.env.get("GOOGLE_ADS_SCOPES") || GOOGLE_ADS_SCOPE;
