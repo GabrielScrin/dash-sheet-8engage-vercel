@@ -61,6 +61,23 @@ interface GoogleAdsCampaignMetricRow {
   videoQuartile50: number;
   videoQuartile75: number;
   videoQuartile100: number;
+  videos?: Array<{
+    id: string;
+    title: string;
+    youtubeVideoId?: string;
+    youtubeUrl?: string;
+    thumbnailUrl?: string;
+    spend: number;
+    impressions: number;
+    uniqueUsers: number;
+    averageFrequency: number;
+    averageCpv: number;
+    videoViews: number;
+    videoQuartile25: number;
+    videoQuartile50: number;
+    videoQuartile75: number;
+    videoQuartile100: number;
+  }>;
 }
 
 const GOOGLE_ADS_CAMPAIGN_TYPE_LABELS: Record<string, string> = {
@@ -4144,8 +4161,11 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
   }, [activeTab, googleDistributionSummary, isGoogleSheetView]);
 
   const googleAdsConnectedCampaigns = useMemo(
-    () => (googleAdsCampaignOverviewQuery.data?.campaigns || []).filter((campaign) => Number(campaign.spend || 0) > 0),
-    [googleAdsCampaignOverviewQuery.data],
+    () =>
+      (googleAdsCampaignOverviewQuery.data?.campaigns || [])
+        .filter((campaign) => Number(campaign.spend || 0) > 0)
+        .filter((campaign) => (activeTab === 'consideracao' ? String(campaign.campaignType || '').toUpperCase() === 'VIDEO' : true)),
+    [activeTab, googleAdsCampaignOverviewQuery.data],
   );
 
   const googleAdsConnectedMetricColumns = useMemo(() => {
@@ -4170,10 +4190,10 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
 
     return [
       ...baseColumns,
-      { key: 'videoQuartile25' as const, label: 'Video assistido ate 25%', format: 'number' as const },
-      { key: 'videoQuartile50' as const, label: 'Video assistido ate 50%', format: 'number' as const },
-      { key: 'videoQuartile75' as const, label: 'Video assistido ate 75%', format: 'number' as const },
-      { key: 'videoQuartile100' as const, label: 'Video assistido ate 100%', format: 'number' as const },
+      { key: 'videoQuartile25' as const, label: 'Views 25%', format: 'number' as const },
+      { key: 'videoQuartile50' as const, label: 'Views 50%', format: 'number' as const },
+      { key: 'videoQuartile75' as const, label: 'Views 75%', format: 'number' as const },
+      { key: 'videoQuartile100' as const, label: 'Views 100%', format: 'number' as const },
     ];
   }, [activeTab]);
 
@@ -4322,6 +4342,22 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       })
       .sort((a, b) => b.spend - a.spend);
   }, [activeTab, googleAdsConnectedCampaigns, isGoogleSheetView]);
+
+  const googleAdsConnectedVideoMetricColumns = useMemo(
+    () => [
+      { key: 'spend', label: 'Custo', format: 'currency' as const },
+      { key: 'uniqueUsers', label: 'Usuarios', format: 'number' as const },
+      { key: 'impressions', label: 'Impressoes', format: 'number' as const },
+      { key: 'averageFrequency', label: 'Freq.', format: 'decimal' as const },
+      { key: 'averageCpv', label: 'CPV', format: 'currency' as const },
+      { key: 'videoViews', label: 'Views', format: 'number' as const },
+      { key: 'videoQuartile25', label: '25%', format: 'number' as const },
+      { key: 'videoQuartile50', label: '50%', format: 'number' as const },
+      { key: 'videoQuartile75', label: '75%', format: 'number' as const },
+      { key: 'videoQuartile100', label: '100%', format: 'number' as const },
+    ],
+    [],
+  );
 
   const isLoading =
     loadingProject ||
@@ -4515,12 +4551,16 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1100px] text-sm">
+                    <table className="w-full min-w-[1180px] text-sm">
                       <thead className="bg-muted/50 border-b">
                         <tr>
-                          <th className="px-4 py-3 text-left font-medium">Campanha</th>
+                          <th className="w-[360px] px-4 py-3 text-left font-medium">Campanha</th>
                           {googleAdsConnectedMetricColumns.map((metric) => (
-                            <th key={`${group.typeKey}-${String(metric.key)}`} className="px-4 py-3 text-center font-medium">
+                            <th
+                              key={`${group.typeKey}-${String(metric.key)}`}
+                              className="min-w-[92px] px-3 py-3 text-center font-medium leading-tight whitespace-normal"
+                              title={metric.label}
+                            >
                               {metric.label}
                             </th>
                           ))}
@@ -4528,17 +4568,75 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                       </thead>
                       <tbody className="divide-y">
                         {group.campaigns.map((campaign) => (
-                          <tr key={campaign.id} className="hover:bg-muted/30">
+                          <React.Fragment key={campaign.id}>
+                          <tr className="hover:bg-muted/30 align-top">
                             <td className="px-4 py-3">
-                              <div className="font-medium">{campaign.name}</div>
+                              <div className="max-w-[340px] break-words font-medium leading-snug">{campaign.name}</div>
                               <div className="text-xs text-muted-foreground">{campaign.id}</div>
+                              {activeTab === 'consideracao' && (campaign.videos || []).length > 0 && (
+                                <div className="mt-3 space-y-2">
+                                  {(campaign.videos || []).map((video) => (
+                                    <div key={video.id} className="rounded-md border bg-background/40 p-2">
+                                      <div className="flex items-start gap-3">
+                                        <div className="h-14 w-24 overflow-hidden rounded border bg-muted shrink-0">
+                                          {video.thumbnailUrl ? (
+                                            <img
+                                              src={video.thumbnailUrl}
+                                              alt={video.title}
+                                              className="h-full w-full object-cover"
+                                            />
+                                          ) : (
+                                            <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                                              <ImageIcon className="h-4 w-4" />
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                              <div className="truncate text-sm font-medium">{video.title}</div>
+                                              {video.youtubeVideoId && (
+                                                <div className="text-xs text-muted-foreground">{video.youtubeVideoId}</div>
+                                              )}
+                                            </div>
+                                            {video.youtubeUrl && (
+                                              <a
+                                                href={video.youtubeUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border hover:bg-muted"
+                                                title="Abrir video"
+                                              >
+                                                <ExternalLink className="h-4 w-4" />
+                                              </a>
+                                            )}
+                                          </div>
+                                          <div className="mt-2 grid grid-cols-5 gap-2">
+                                            {googleAdsConnectedVideoMetricColumns.map((metric) => (
+                                              <div key={`${video.id}-${metric.key}`} className="rounded bg-muted/50 px-2 py-1">
+                                                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                                  {metric.label}
+                                                </div>
+                                                <div className="text-xs font-medium">
+                                                  {formatDistributionMetricValue(Number(video[metric.key] || 0), metric.format)}
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </td>
                             {googleAdsConnectedMetricColumns.map((metric) => (
-                              <td key={`${campaign.id}-${String(metric.key)}`} className="px-4 py-3 text-center">
+                              <td key={`${campaign.id}-${String(metric.key)}`} className="px-3 py-3 text-center align-top">
                                 {formatDistributionMetricValue(Number(campaign[metric.key] || 0), metric.format)}
                               </td>
                             ))}
                           </tr>
+                          </React.Fragment>
                         ))}
                       </tbody>
                     </table>

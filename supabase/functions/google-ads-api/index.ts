@@ -610,6 +610,22 @@ Deno.serve(async (req) => {
         "AND campaign.status != 'REMOVED'",
       ].join(" ");
 
+      const videoAdsQuery = [
+        "SELECT campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.video_responsive_ad.videos,",
+        "metrics.cost_micros, metrics.impressions, metrics.unique_users, metrics.average_impression_frequency_per_user, metrics.average_cpv,",
+        "metrics.video_views, metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate, metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate",
+        "FROM ad_group_ad",
+        `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+        "AND campaign.status != 'REMOVED'",
+        "AND campaign.advertising_channel_type = 'VIDEO'",
+      ].join(" ");
+
+      const videoAssetsQuery = [
+        "SELECT asset.resource_name, asset.id, asset.name, asset.youtube_video_asset.youtube_video_id, asset.type",
+        "FROM asset",
+        "WHERE asset.type = 'YOUTUBE_VIDEO'",
+      ].join(" ");
+
       type BatchResult = Array<{
         results?: Array<{
           segments?: { date?: string };
@@ -631,7 +647,45 @@ Deno.serve(async (req) => {
         }>;
       }>;
 
-      const [tsRes, campRes] = await Promise.all([
+      type VideoAdsBatchResult = Array<{
+        results?: Array<{
+          campaign?: { id?: string; name?: string };
+          adGroupAd?: {
+            ad?: {
+              id?: string;
+              videoResponsiveAd?: {
+                videos?: Array<{ asset?: string }>;
+              };
+            };
+          };
+          metrics?: {
+            costMicros?: string;
+            impressions?: string;
+            uniqueUsers?: string;
+            averageImpressionFrequencyPerUser?: number;
+            averageCpv?: number;
+            videoViews?: string;
+            videoQuartileP25Rate?: number;
+            videoQuartileP50Rate?: number;
+            videoQuartileP75Rate?: number;
+            videoQuartileP100Rate?: number;
+          };
+        }>;
+      }>;
+
+      type VideoAssetBatchResult = Array<{
+        results?: Array<{
+          asset?: {
+            resourceName?: string;
+            id?: string;
+            name?: string;
+            youtubeVideoAsset?: { youtubeVideoId?: string };
+            type?: string;
+          };
+        }>;
+      }>;
+
+      const [tsRes, campRes, videoAdsRes, videoAssetsRes] = await Promise.all([
         googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
           method: "POST",
           body: JSON.stringify({ query: timeseriesQuery }),
@@ -639,6 +693,14 @@ Deno.serve(async (req) => {
         googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
           method: "POST",
           body: JSON.stringify({ query: campaignsQuery }),
+        }),
+        googleAdsRequest<VideoAdsBatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
+          method: "POST",
+          body: JSON.stringify({ query: videoAdsQuery }),
+        }),
+        googleAdsRequest<VideoAssetBatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
+          method: "POST",
+          body: JSON.stringify({ query: videoAssetsQuery }),
         }),
       ]);
 
@@ -741,12 +803,129 @@ Deno.serve(async (req) => {
         }))
         .sort((a, b) => b.spend - a.spend);
 
+      const assetMap = new Map<string, { title: string; youtubeVideoId: string; youtubeUrl: string; thumbnailUrl: string }>();
+      for (const batch of (Array.isArray(videoAssetsRes) ? videoAssetsRes : [videoAssetsRes])) {
+        for (const result of (batch.results || [])) {
+          const resourceName = String(result.asset?.resourceName || "");
+          const youtubeVideoId = String(result.asset?.youtubeVideoAsset?.youtubeVideoId || "");
+          if (!resourceName || !youtubeVideoId) continue;
+          assetMap.set(resourceName, {
+            title: String(result.asset?.name || youtubeVideoId),
+            youtubeVideoId,
+            youtubeUrl: `https://www.youtube.com/watch?v=${youtubeVideoId}`,
+            thumbnailUrl: `https://i.ytimg.com/vi/${youtubeVideoId}/hqdefault.jpg`,
+          });
+        }
+      }
+
+      const videosByCampaign = new Map<string, Array<{
+        id: string;
+        title: string;
+        youtubeVideoId?: string;
+        youtubeUrl?: string;
+        thumbnailUrl?: string;
+        spend: number;
+        impressions: number;
+        uniqueUsers: number;
+        averageFrequency: number;
+        averageCpv: number;
+        videoViews: number;
+        videoQuartile25: number;
+        videoQuartile50: number;
+        videoQuartile75: number;
+        videoQuartile100: number;
+      }>>();
+
+      const videoAgg = new Map<string, {
+        campaignId: string;
+        videoId: string;
+        title: string;
+        youtubeVideoId?: string;
+        youtubeUrl?: string;
+        thumbnailUrl?: string;
+        spend: number;
+        impressions: number;
+        uniqueUsers: number;
+        averageFrequency: number;
+        averageCpv: number;
+        videoViews: number;
+        videoQuartile25: number;
+        videoQuartile50: number;
+        videoQuartile75: number;
+        videoQuartile100: number;
+      }>();
+
+      for (const batch of (Array.isArray(videoAdsRes) ? videoAdsRes : [videoAdsRes])) {
+        for (const result of (batch.results || [])) {
+          const campaignId = String(result.campaign?.id || "");
+          if (!campaignId) continue;
+          const assetRefs = result.adGroupAd?.ad?.videoResponsiveAd?.videos || [];
+          const spend = Number(result.metrics?.costMicros || 0) / 1_000_000;
+          const impressions = Number(result.metrics?.impressions || 0);
+          const uniqueUsers = Number(result.metrics?.uniqueUsers || 0);
+          const averageFrequency = Number(result.metrics?.averageImpressionFrequencyPerUser || 0);
+          const averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000;
+          const videoViews = Number(result.metrics?.videoViews || 0);
+          const videoQuartile25 = videoViews * Number(result.metrics?.videoQuartileP25Rate || 0);
+          const videoQuartile50 = videoViews * Number(result.metrics?.videoQuartileP50Rate || 0);
+          const videoQuartile75 = videoViews * Number(result.metrics?.videoQuartileP75Rate || 0);
+          const videoQuartile100 = videoViews * Number(result.metrics?.videoQuartileP100Rate || 0);
+
+          for (const assetRef of assetRefs) {
+            const assetName = String(assetRef?.asset || "");
+            if (!assetName) continue;
+            const assetData = assetMap.get(assetName);
+            const key = `${campaignId}:${assetName}`;
+            const current = videoAgg.get(key) || {
+              campaignId,
+              videoId: assetName,
+              title: assetData?.title || assetName,
+              youtubeVideoId: assetData?.youtubeVideoId,
+              youtubeUrl: assetData?.youtubeUrl,
+              thumbnailUrl: assetData?.thumbnailUrl,
+              spend: 0,
+              impressions: 0,
+              uniqueUsers: 0,
+              averageFrequency: 0,
+              averageCpv: 0,
+              videoViews: 0,
+              videoQuartile25: 0,
+              videoQuartile50: 0,
+              videoQuartile75: 0,
+              videoQuartile100: 0,
+            };
+            current.spend += spend;
+            current.impressions += impressions;
+            current.uniqueUsers += uniqueUsers;
+            current.averageFrequency = averageFrequency || current.averageFrequency || 0;
+            current.averageCpv = averageCpv || current.averageCpv || 0;
+            current.videoViews += videoViews;
+            current.videoQuartile25 += videoQuartile25;
+            current.videoQuartile50 += videoQuartile50;
+            current.videoQuartile75 += videoQuartile75;
+            current.videoQuartile100 += videoQuartile100;
+            videoAgg.set(key, current);
+          }
+        }
+      }
+
+      for (const video of videoAgg.values()) {
+        const current = videosByCampaign.get(video.campaignId) || [];
+        current.push(video);
+        videosByCampaign.set(video.campaignId, current);
+      }
+
+      const campaignsWithVideos = campaigns.map((campaign) => ({
+        ...campaign,
+        videos: (videosByCampaign.get(campaign.id) || []).sort((a, b) => b.spend - a.spend),
+      }));
+
       const totals = timeseries.reduce(
         (acc, r) => ({ spend: acc.spend + r.spend, conversions: acc.conversions + r.conversions, impressions: acc.impressions + r.impressions }),
         { spend: 0, conversions: 0, impressions: 0 },
       );
 
-      return new Response(JSON.stringify({ timeseries, campaigns, totals }), {
+      return new Response(JSON.stringify({ timeseries, campaigns: campaignsWithVideos, totals }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
