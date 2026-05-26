@@ -602,7 +602,7 @@ Deno.serve(async (req) => {
       ].join(" ");
 
       const campaignsQuery = [
-        "SELECT campaign.id, campaign.name, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions,",
+        "SELECT campaign.id, campaign.name, campaign.advertising_channel_type, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions,",
         "metrics.unique_users, metrics.average_impression_frequency_per_user, metrics.average_cpv, metrics.video_views,",
         "metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate, metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate",
         "FROM campaign",
@@ -613,7 +613,7 @@ Deno.serve(async (req) => {
       type BatchResult = Array<{
         results?: Array<{
           segments?: { date?: string };
-          campaign?: { id?: string; name?: string };
+          campaign?: { id?: string; name?: string; advertisingChannelType?: string };
           metrics?: {
             costMicros?: string;
             impressions?: string;
@@ -660,6 +660,7 @@ Deno.serve(async (req) => {
       const byCampaign = new Map<string, {
         id: string;
         name: string;
+        campaignType: string;
         spend: number;
         conversions: number;
         impressions: number;
@@ -678,6 +679,7 @@ Deno.serve(async (req) => {
           const id = String(result.campaign?.id || "");
           if (!id) continue;
           const name = String(result.campaign?.name || id);
+          const campaignType = String(result.campaign?.advertisingChannelType || "");
           const videoViews = Number(result.metrics?.videoViews || 0);
           const quartile25Rate = Number(result.metrics?.videoQuartileP25Rate || 0);
           const quartile50Rate = Number(result.metrics?.videoQuartileP50Rate || 0);
@@ -686,6 +688,7 @@ Deno.serve(async (req) => {
           const cur = byCampaign.get(id) || {
             id,
             name,
+            campaignType,
             spend: 0,
             conversions: 0,
             impressions: 0,
@@ -705,12 +708,12 @@ Deno.serve(async (req) => {
           cur.clicks += Number(result.metrics?.clicks || 0);
           cur.uniqueUsers += Number(result.metrics?.uniqueUsers || 0);
           cur.averageFrequency = Number(result.metrics?.averageImpressionFrequencyPerUser || cur.averageFrequency || 0);
-          cur.averageCpv = Number(result.metrics?.averageCpv || cur.averageCpv || 0);
+          cur.averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000 || cur.averageCpv || 0;
           cur.videoViews += videoViews;
-          cur.videoQuartile25 += videoViews > 0 ? videoViews * (quartile25Rate / 100) : 0;
-          cur.videoQuartile50 += videoViews > 0 ? videoViews * (quartile50Rate / 100) : 0;
-          cur.videoQuartile75 += videoViews > 0 ? videoViews * (quartile75Rate / 100) : 0;
-          cur.videoQuartile100 += videoViews > 0 ? videoViews * (quartile100Rate / 100) : 0;
+          cur.videoQuartile25 += videoViews > 0 ? videoViews * quartile25Rate : 0;
+          cur.videoQuartile50 += videoViews > 0 ? videoViews * quartile50Rate : 0;
+          cur.videoQuartile75 += videoViews > 0 ? videoViews * quartile75Rate : 0;
+          cur.videoQuartile100 += videoViews > 0 ? videoViews * quartile100Rate : 0;
           byCampaign.set(id, cur);
         }
       }
@@ -719,6 +722,7 @@ Deno.serve(async (req) => {
         .map((c) => ({
           id: c.id,
           name: c.name,
+          campaignType: c.campaignType,
           spend: c.spend,
           impressions: c.impressions,
           clicks: c.clicks,
