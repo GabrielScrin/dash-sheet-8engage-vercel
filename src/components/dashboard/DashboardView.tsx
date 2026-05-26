@@ -22,6 +22,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { processDashboardData } from '@/lib/dashboard-utils';
 import { getMetaMetricFormat, getMetaMetricLabel, getMetaMetricValue } from '@/lib/meta-metric-labels';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { eachDayOfInterval, eachMonthOfInterval, eachWeekOfInterval, format, startOfMonth, startOfWeek, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { DateRange } from 'react-day-picker';
@@ -44,6 +45,7 @@ interface MetaSourceConfig {
 interface GoogleAdsCampaignMetricRow {
   id: string;
   name: string;
+  campaignType?: string;
   spend: number;
   impressions: number;
   clicks: number;
@@ -60,6 +62,27 @@ interface GoogleAdsCampaignMetricRow {
   videoQuartile75: number;
   videoQuartile100: number;
 }
+
+const GOOGLE_ADS_CAMPAIGN_TYPE_LABELS: Record<string, string> = {
+  SEARCH: 'Search',
+  DISPLAY: 'Display',
+  VIDEO: 'Video',
+  SHOPPING: 'Shopping',
+  PERFORMANCE_MAX: 'Performance Max',
+  DEMAND_GEN: 'Demand Gen',
+  DISCOVERY: 'Discovery',
+  MULTI_CHANNEL: 'Multi-channel',
+  LOCAL: 'Local',
+  HOTEL: 'Hotel',
+  SMART: 'Smart',
+  APP: 'App',
+};
+
+const getGoogleAdsCampaignTypeLabel = (value: string | null | undefined) => {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (!normalized) return 'Sem tipo';
+  return GOOGLE_ADS_CAMPAIGN_TYPE_LABELS[normalized] || normalized.replace(/_/g, ' ');
+};
 
 function getSourceConfig(config: unknown): MetaSourceConfig | null {
   if (config && typeof config === 'object' && !Array.isArray(config)) {
@@ -4154,6 +4177,152 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     ];
   }, [activeTab]);
 
+  const googleAdsConnectedSummaryCards = useMemo(() => {
+    if (!isGoogleSheetView || googleAdsConnectedCampaigns.length === 0) return [];
+
+    const totals = googleAdsConnectedCampaigns.reduce(
+      (acc, campaign) => {
+        acc.spend += Number(campaign.spend || 0);
+        acc.impressions += Number(campaign.impressions || 0);
+        acc.clicks += Number(campaign.clicks || 0);
+        acc.conversions += Number(campaign.conversions || 0);
+        acc.uniqueUsers += Number(campaign.uniqueUsers || 0);
+        acc.videoViews += Number(campaign.videoViews || 0);
+        acc.videoQuartile25 += Number(campaign.videoQuartile25 || 0);
+        acc.videoQuartile50 += Number(campaign.videoQuartile50 || 0);
+        acc.videoQuartile75 += Number(campaign.videoQuartile75 || 0);
+        acc.videoQuartile100 += Number(campaign.videoQuartile100 || 0);
+        return acc;
+      },
+      {
+        spend: 0,
+        impressions: 0,
+        clicks: 0,
+        conversions: 0,
+        uniqueUsers: 0,
+        videoViews: 0,
+        videoQuartile25: 0,
+        videoQuartile50: 0,
+        videoQuartile75: 0,
+        videoQuartile100: 0,
+      },
+    );
+
+    const baseCards = [
+      { label: 'Campanhas', value: googleAdsConnectedCampaigns.length, format: 'number' as const },
+      { label: 'Custo', value: totals.spend, format: 'currency' as const },
+      { label: 'Usuarios exclusivos', value: totals.uniqueUsers, format: 'number' as const },
+      { label: 'Impressoes', value: totals.impressions, format: 'number' as const },
+      {
+        label: 'Freq. media impr. / usuario',
+        value: totals.uniqueUsers > 0 ? totals.impressions / totals.uniqueUsers : 0,
+        format: 'decimal' as const,
+      },
+    ];
+
+    if (activeTab === 'descoberta') {
+      return [
+        ...baseCards,
+        { label: 'Cliques', value: totals.clicks, format: 'number' as const },
+        { label: 'CPC medio', value: totals.clicks > 0 ? totals.spend / totals.clicks : 0, format: 'currency' as const },
+        { label: 'Conversoes', value: totals.conversions, format: 'number' as const },
+        {
+          label: 'Custo / Conv.',
+          value: totals.conversions > 0 ? totals.spend / totals.conversions : 0,
+          format: 'currency' as const,
+        },
+      ];
+    }
+
+    return [
+      ...baseCards,
+      { label: 'Visualizacao do TrueView', value: totals.videoViews, format: 'number' as const },
+      { label: 'CPV medio do TrueView', value: totals.videoViews > 0 ? totals.spend / totals.videoViews : 0, format: 'currency' as const },
+      { label: 'Video assistido ate 25%', value: totals.videoQuartile25, format: 'number' as const },
+      { label: 'Video assistido ate 50%', value: totals.videoQuartile50, format: 'number' as const },
+      { label: 'Video assistido ate 75%', value: totals.videoQuartile75, format: 'number' as const },
+      { label: 'Video assistido ate 100%', value: totals.videoQuartile100, format: 'number' as const },
+    ];
+  }, [activeTab, googleAdsConnectedCampaigns, isGoogleSheetView]);
+
+  const googleAdsConnectedCampaignGroups = useMemo(() => {
+    if (!isGoogleSheetView || googleAdsConnectedCampaigns.length === 0) return [];
+
+    const grouped = new Map<string, GoogleAdsCampaignMetricRow[]>();
+    for (const campaign of googleAdsConnectedCampaigns) {
+      const key = String(campaign.campaignType || '').trim().toUpperCase() || 'UNKNOWN';
+      const current = grouped.get(key) || [];
+      current.push(campaign);
+      grouped.set(key, current);
+    }
+
+    return Array.from(grouped.entries())
+      .map(([typeKey, campaigns]) => {
+        const totals = campaigns.reduce(
+          (acc, campaign) => {
+            acc.spend += Number(campaign.spend || 0);
+            acc.impressions += Number(campaign.impressions || 0);
+            acc.clicks += Number(campaign.clicks || 0);
+            acc.conversions += Number(campaign.conversions || 0);
+            acc.uniqueUsers += Number(campaign.uniqueUsers || 0);
+            acc.videoViews += Number(campaign.videoViews || 0);
+            acc.videoQuartile25 += Number(campaign.videoQuartile25 || 0);
+            acc.videoQuartile50 += Number(campaign.videoQuartile50 || 0);
+            acc.videoQuartile75 += Number(campaign.videoQuartile75 || 0);
+            acc.videoQuartile100 += Number(campaign.videoQuartile100 || 0);
+            return acc;
+          },
+          {
+            spend: 0,
+            impressions: 0,
+            clicks: 0,
+            conversions: 0,
+            uniqueUsers: 0,
+            videoViews: 0,
+            videoQuartile25: 0,
+            videoQuartile50: 0,
+            videoQuartile75: 0,
+            videoQuartile100: 0,
+          },
+        );
+
+        const summaryCards =
+          activeTab === 'descoberta'
+            ? [
+                { label: 'Campanhas', value: campaigns.length, format: 'number' as const },
+                { label: 'Custo', value: totals.spend, format: 'currency' as const },
+                { label: 'Impressoes', value: totals.impressions, format: 'number' as const },
+                { label: 'Cliques', value: totals.clicks, format: 'number' as const },
+                { label: 'CPC medio', value: totals.clicks > 0 ? totals.spend / totals.clicks : 0, format: 'currency' as const },
+                { label: 'Conversoes', value: totals.conversions, format: 'number' as const },
+                {
+                  label: 'Custo / Conv.',
+                  value: totals.conversions > 0 ? totals.spend / totals.conversions : 0,
+                  format: 'currency' as const,
+                },
+              ]
+            : [
+                { label: 'Campanhas', value: campaigns.length, format: 'number' as const },
+                { label: 'Custo', value: totals.spend, format: 'currency' as const },
+                { label: 'Visualizacao do TrueView', value: totals.videoViews, format: 'number' as const },
+                { label: 'CPV medio do TrueView', value: totals.videoViews > 0 ? totals.spend / totals.videoViews : 0, format: 'currency' as const },
+                { label: 'Video assistido ate 25%', value: totals.videoQuartile25, format: 'number' as const },
+                { label: 'Video assistido ate 50%', value: totals.videoQuartile50, format: 'number' as const },
+                { label: 'Video assistido ate 75%', value: totals.videoQuartile75, format: 'number' as const },
+                { label: 'Video assistido ate 100%', value: totals.videoQuartile100, format: 'number' as const },
+              ];
+
+        return {
+          typeKey,
+          typeLabel: getGoogleAdsCampaignTypeLabel(typeKey),
+          campaigns: campaigns.slice().sort((a, b) => b.spend - a.spend),
+          summaryCards,
+          spend: totals.spend,
+        };
+      })
+      .sort((a, b) => b.spend - a.spend);
+  }, [activeTab, googleAdsConnectedCampaigns, isGoogleSheetView]);
+
   const isLoading =
     loadingProject ||
     (loadingMappings && !(shareToken && initialMappings)) ||
@@ -4311,34 +4480,72 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
             Nenhuma campanha com gasto foi encontrada na conta Google Ads para o periodo selecionado.
           </div>
         ) : (
-          <div className="rounded-md border bg-card text-card-foreground shadow-sm overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-sm">
-              <thead className="bg-muted/50 border-b">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium">Campanha</th>
-                  {googleAdsConnectedMetricColumns.map((metric) => (
-                    <th key={String(metric.key)} className="px-4 py-3 text-center font-medium">
-                      {metric.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {googleAdsConnectedCampaigns.map((campaign) => (
-                  <tr key={campaign.id} className="hover:bg-muted/30">
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{campaign.name}</div>
-                      <div className="text-xs text-muted-foreground">{campaign.id}</div>
-                    </td>
-                    {googleAdsConnectedMetricColumns.map((metric) => (
-                      <td key={`${campaign.id}-${String(metric.key)}`} className="px-4 py-3 text-center">
-                        {formatDistributionMetricValue(Number(campaign[metric.key] || 0), metric.format)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-6">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              {googleAdsConnectedSummaryCards.map((card, index) => (
+                <BigNumberCard
+                  key={`google-ads-connected-summary-${card.label}`}
+                  label={card.label}
+                  value={card.value}
+                  format={card.format}
+                  delay={index * 0.04}
+                />
+              ))}
+            </div>
+
+            <div className="space-y-6">
+              {googleAdsConnectedCampaignGroups.map((group, groupIndex) => (
+                <div key={group.typeKey} className="rounded-md border bg-card text-card-foreground shadow-sm">
+                  <div className="border-b px-4 py-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="text-base font-semibold">{group.typeLabel}</h4>
+                      <Badge variant="secondary">{group.campaigns.length} campanhas</Badge>
+                    </div>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                      {group.summaryCards.map((card, index) => (
+                        <BigNumberCard
+                          key={`${group.typeKey}-${card.label}`}
+                          label={card.label}
+                          value={card.value}
+                          format={card.format}
+                          delay={(groupIndex * 0.04) + (index * 0.02)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[1100px] text-sm">
+                      <thead className="bg-muted/50 border-b">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium">Campanha</th>
+                          {googleAdsConnectedMetricColumns.map((metric) => (
+                            <th key={`${group.typeKey}-${String(metric.key)}`} className="px-4 py-3 text-center font-medium">
+                              {metric.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {group.campaigns.map((campaign) => (
+                          <tr key={campaign.id} className="hover:bg-muted/30">
+                            <td className="px-4 py-3">
+                              <div className="font-medium">{campaign.name}</div>
+                              <div className="text-xs text-muted-foreground">{campaign.id}</div>
+                            </td>
+                            {googleAdsConnectedMetricColumns.map((metric) => (
+                              <td key={`${campaign.id}-${String(metric.key)}`} className="px-4 py-3 text-center">
+                                {formatDistributionMetricValue(Number(campaign[metric.key] || 0), metric.format)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </section>
