@@ -18,25 +18,25 @@ jobs:
       
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.67.1
 
       - name: Deploy meta-auth
-        run: supabase functions deploy meta-auth --project-ref $PROJECT_ID --no-verify-jwt
+        run: supabase functions deploy meta-auth --project-ref $PROJECT_ID --no-verify-jwt --use-api
 
       - name: Deploy meta-api
-        run: supabase functions deploy meta-api --project-ref $PROJECT_ID --no-verify-jwt
+        run: supabase functions deploy meta-api --project-ref $PROJECT_ID --no-verify-jwt --use-api
 
       - name: Deploy google-sheets
-        run: supabase functions deploy google-sheets --project-ref $PROJECT_ID --no-verify-jwt
+        run: supabase functions deploy google-sheets --project-ref $PROJECT_ID --no-verify-jwt --use-api
 
       - name: Deploy google-ads-api
-        run: supabase functions deploy google-ads-api --project-ref $PROJECT_ID --no-verify-jwt
+        run: supabase functions deploy google-ads-api --project-ref $PROJECT_ID --no-verify-jwt --use-api
 
       - name: Deploy validate-share-token
-        run: supabase functions deploy validate-share-token --project-ref $PROJECT_ID --no-verify-jwt
+        run: supabase functions deploy validate-share-token --project-ref $PROJECT_ID --no-verify-jwt --use-api
 
       - name: Deploy create-share-token
-        run: supabase functions deploy create-share-token --project-ref $PROJECT_ID --no-verify-jwt
+        run: supabase functions deploy create-share-token --project-ref $PROJECT_ID --no-verify-jwt --use-api
 
       - name: Deploy payment-attribution
-        run: supabase functions deploy payment-attribution --project-ref $PROJECT_ID --no-verify-jwt
+        run: supabase functions deploy payment-attribution --project-ref $PROJECT_ID --no-verify-jwt --use-api
