@@ -685,7 +685,7 @@ Deno.serve(async (req) => {
         }>;
       }>;
 
-      const [tsRes, campRes, videoAdsRes, videoAssetsRes] = await Promise.all([
+      const [tsRes, campRes] = await Promise.all([
         googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
           method: "POST",
           body: JSON.stringify({ query: timeseriesQuery }),
@@ -694,15 +694,38 @@ Deno.serve(async (req) => {
           method: "POST",
           body: JSON.stringify({ query: campaignsQuery }),
         }),
-        googleAdsRequest<VideoAdsBatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
-          method: "POST",
-          body: JSON.stringify({ query: videoAdsQuery }),
-        }),
-        googleAdsRequest<VideoAssetBatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
-          method: "POST",
-          body: JSON.stringify({ query: videoAssetsQuery }),
-        }),
       ]);
+
+      let videoAdsRes: VideoAdsBatchResult = [];
+      let videoAssetsRes: VideoAssetBatchResult = [];
+
+      try {
+        videoAdsRes = await googleAdsRequest<VideoAdsBatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          {
+            method: "POST",
+            body: JSON.stringify({ query: videoAdsQuery }),
+          },
+        );
+      } catch (error) {
+        console.error("Google Ads video ads query failed", error);
+      }
+
+      try {
+        videoAssetsRes = await googleAdsRequest<VideoAssetBatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          {
+            method: "POST",
+            body: JSON.stringify({ query: videoAssetsQuery }),
+          },
+        );
+      } catch (error) {
+        console.error("Google Ads video assets query failed", error);
+      }
 
       const byDate = new Map<string, { date: string; spend: number; conversions: number; impressions: number; clicks: number }>();
       for (const batch of (Array.isArray(tsRes) ? tsRes : [tsRes])) {
