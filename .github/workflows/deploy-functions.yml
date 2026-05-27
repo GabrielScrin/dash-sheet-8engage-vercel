@@ -1,10 +1,6 @@
 name: Deploy Supabase Functions
 
 on:
-  push:
-    paths:
-      - '.github/workflows/deploy-functions.yml'
-      - 'supabase/functions/google-ads-api/**'
   workflow_dispatch:
 
 jobs:
