@@ -4164,7 +4164,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     () =>
       (googleAdsCampaignOverviewQuery.data?.campaigns || [])
         .filter((campaign) => Number(campaign.spend || 0) > 0)
-        .filter((campaign) => (activeTab === 'consideracao' ? String(campaign.campaignType || '').toUpperCase() === 'VIDEO' : true)),
+        .filter((campaign) => (activeTab === 'consideracao' ? String(campaign.campaignType || '').toUpperCase() !== 'SEARCH' : true)),
     [activeTab, googleAdsCampaignOverviewQuery.data],
   );
 
