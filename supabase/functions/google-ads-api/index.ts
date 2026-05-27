@@ -610,6 +610,17 @@ Deno.serve(async (req) => {
         "AND campaign.status != 'REMOVED'",
       ].join(" ");
 
+      const adsQuery = [
+        "SELECT campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type, ad_group_ad.ad.final_urls,",
+        "metrics.cost_micros, metrics.impressions, metrics.unique_users, metrics.average_impression_frequency_per_user,",
+        "metrics.trueview_average_cpv, metrics.video_trueview_views, metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate,",
+        "metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate",
+        "FROM ad_group_ad",
+        `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+        "AND campaign.status != 'REMOVED'",
+        "AND ad_group_ad.status != 'REMOVED'",
+      ].join(" ");
+
       const videoAdsQuery = [
         "SELECT campaign.id, campaign.name, video.id, video.title,",
         "metrics.cost_micros, metrics.impressions, metrics.trueview_average_cpv, metrics.video_trueview_views,",
@@ -674,6 +685,32 @@ Deno.serve(async (req) => {
         }>;
       }>;
 
+      type AdsBatchResult = Array<{
+        results?: Array<{
+          campaign?: { id?: string; name?: string };
+          adGroupAd?: {
+            ad?: {
+              id?: string;
+              name?: string;
+              type?: string;
+              finalUrls?: string[];
+            };
+          };
+          metrics?: {
+            costMicros?: string;
+            impressions?: string;
+            uniqueUsers?: string;
+            averageImpressionFrequencyPerUser?: number;
+            trueviewAverageCpv?: number;
+            videoTrueviewViews?: string;
+            videoQuartileP25Rate?: number;
+            videoQuartileP50Rate?: number;
+            videoQuartileP75Rate?: number;
+            videoQuartileP100Rate?: number;
+          };
+        }>;
+      }>;
+
       type VideoAdAssetsFallbackBatchResult = Array<{
         results?: Array<{
           campaign?: { id?: string; name?: string };
@@ -710,7 +747,7 @@ Deno.serve(async (req) => {
         }>;
       }>;
 
-      const [tsRes, campRes] = await Promise.all([
+      const [tsRes, campRes, adsRes] = await Promise.all([
         googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
           method: "POST",
           body: JSON.stringify({ query: timeseriesQuery }),
@@ -718,6 +755,10 @@ Deno.serve(async (req) => {
         googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
           method: "POST",
           body: JSON.stringify({ query: campaignsQuery }),
+        }),
+        googleAdsRequest<AdsBatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
+          method: "POST",
+          body: JSON.stringify({ query: adsQuery }),
         }),
       ]);
 
@@ -900,6 +941,97 @@ Deno.serve(async (req) => {
         }))
         .sort((a, b) => b.spend - a.spend);
 
+      const adsByCampaign = new Map<string, Array<{
+        id: string;
+        title: string;
+        adType?: string;
+        link?: string;
+        thumbnailUrl?: string;
+        spend: number;
+        impressions: number;
+        uniqueUsers: number;
+        averageFrequency: number;
+        averageCpv: number;
+        videoViews: number;
+        videoQuartile25: number;
+        videoQuartile50: number;
+        videoQuartile75: number;
+        videoQuartile100: number;
+      }>>();
+
+      const adAgg = new Map<string, {
+        campaignId: string;
+        id: string;
+        title: string;
+        adType?: string;
+        link?: string;
+        thumbnailUrl?: string;
+        spend: number;
+        impressions: number;
+        uniqueUsers: number;
+        averageFrequency: number;
+        averageCpv: number;
+        videoViews: number;
+        videoQuartile25: number;
+        videoQuartile50: number;
+        videoQuartile75: number;
+        videoQuartile100: number;
+      }>();
+
+      for (const batch of (Array.isArray(adsRes) ? adsRes : [adsRes])) {
+        for (const result of (batch.results || [])) {
+          const campaignId = String(result.campaign?.id || "");
+          const adId = String(result.adGroupAd?.ad?.id || "");
+          if (!campaignId || !adId) continue;
+
+          const spend = Number(result.metrics?.costMicros || 0) / 1_000_000;
+          const impressions = Number(result.metrics?.impressions || 0);
+          const uniqueUsers = Number(result.metrics?.uniqueUsers || 0);
+          const averageFrequency = Number(result.metrics?.averageImpressionFrequencyPerUser || 0);
+          const averageCpv = Number(result.metrics?.trueviewAverageCpv || 0) / 1_000_000;
+          const videoViews = Number(result.metrics?.videoTrueviewViews || 0);
+          const videoQuartile25 = videoViews * Number(result.metrics?.videoQuartileP25Rate || 0);
+          const videoQuartile50 = videoViews * Number(result.metrics?.videoQuartileP50Rate || 0);
+          const videoQuartile75 = videoViews * Number(result.metrics?.videoQuartileP75Rate || 0);
+          const videoQuartile100 = videoViews * Number(result.metrics?.videoQuartileP100Rate || 0);
+          const finalUrls = Array.isArray(result.adGroupAd?.ad?.finalUrls) ? result.adGroupAd?.ad?.finalUrls : [];
+          const link = String(finalUrls?.[0] || "");
+          const title = String(result.adGroupAd?.ad?.name || result.adGroupAd?.ad?.id || adId);
+          const adType = String(result.adGroupAd?.ad?.type || "");
+
+          const current = adAgg.get(adId) || {
+            campaignId,
+            id: adId,
+            title,
+            adType,
+            link: link || undefined,
+            thumbnailUrl: undefined,
+            spend: 0,
+            impressions: 0,
+            uniqueUsers: 0,
+            averageFrequency: 0,
+            averageCpv: 0,
+            videoViews: 0,
+            videoQuartile25: 0,
+            videoQuartile50: 0,
+            videoQuartile75: 0,
+            videoQuartile100: 0,
+          };
+
+          current.spend += spend;
+          current.impressions += impressions;
+          current.uniqueUsers += uniqueUsers;
+          current.averageFrequency = averageFrequency || current.averageFrequency || 0;
+          current.averageCpv = averageCpv || current.averageCpv || 0;
+          current.videoViews += videoViews;
+          current.videoQuartile25 += videoQuartile25;
+          current.videoQuartile50 += videoQuartile50;
+          current.videoQuartile75 += videoQuartile75;
+          current.videoQuartile100 += videoQuartile100;
+          adAgg.set(adId, current);
+        }
+      }
+
       const videosByCampaign = new Map<string, Array<{
         id: string;
         title: string;
@@ -989,8 +1121,27 @@ Deno.serve(async (req) => {
         videosByCampaign.set(video.campaignId, current);
       }
 
+      for (const ad of adAgg.values()) {
+        if (!ad.thumbnailUrl) {
+          const relatedVideos = videosByCampaign.get(ad.campaignId) || [];
+          const normalizedAdTitle = ad.title.trim().toLowerCase();
+          const matchedVideo =
+            relatedVideos.find((video) => video.title.trim().toLowerCase() === normalizedAdTitle) ||
+            relatedVideos.find((video) => normalizedAdTitle.includes(video.title.trim().toLowerCase()) || video.title.trim().toLowerCase().includes(normalizedAdTitle)) ||
+            relatedVideos[0];
+          if (matchedVideo) {
+            ad.thumbnailUrl = matchedVideo.thumbnailUrl;
+            if (!ad.link) ad.link = matchedVideo.youtubeUrl;
+          }
+        }
+        const current = adsByCampaign.get(ad.campaignId) || [];
+        current.push(ad);
+        adsByCampaign.set(ad.campaignId, current);
+      }
+
       const campaignsWithVideos = campaigns.map((campaign) => ({
         ...campaign,
+        ads: (adsByCampaign.get(campaign.id) || []).sort((a, b) => b.spend - a.spend),
         videos: (videosByCampaign.get(campaign.id) || []).sort((a, b) => b.spend - a.spend),
       }));
 
