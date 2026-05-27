@@ -61,6 +61,23 @@ interface GoogleAdsCampaignMetricRow {
   videoQuartile50: number;
   videoQuartile75: number;
   videoQuartile100: number;
+  ads?: Array<{
+    id: string;
+    title: string;
+    adType?: string;
+    link?: string;
+    thumbnailUrl?: string;
+    spend: number;
+    impressions: number;
+    uniqueUsers: number;
+    averageFrequency: number;
+    averageCpv: number;
+    videoViews: number;
+    videoQuartile25: number;
+    videoQuartile50: number;
+    videoQuartile75: number;
+    videoQuartile100: number;
+  }>;
   videos?: Array<{
     id: string;
     title: string;
@@ -4573,16 +4590,16 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                             <td className="px-4 py-3">
                               <div className="max-w-[340px] break-words font-medium leading-snug">{campaign.name}</div>
                               <div className="text-xs text-muted-foreground">{campaign.id}</div>
-                              {activeTab === 'consideracao' && (campaign.videos || []).length > 0 && (
+                              {activeTab === 'consideracao' && ((campaign.ads || []).length > 0 || (campaign.videos || []).length > 0) && (
                                 <div className="mt-3 space-y-2">
-                                  {(campaign.videos || []).map((video) => (
-                                    <div key={video.id} className="rounded-md border bg-background/40 p-2">
+                                  {((campaign.ads || []).length > 0 ? (campaign.ads || []) : (campaign.videos || [])).map((item) => (
+                                    <div key={item.id} className="rounded-md border bg-background/40 p-2">
                                       <div className="flex items-start gap-3">
                                         <div className="h-14 w-24 overflow-hidden rounded border bg-muted shrink-0">
-                                          {video.thumbnailUrl ? (
+                                          {item.thumbnailUrl ? (
                                             <img
-                                              src={video.thumbnailUrl}
-                                              alt={video.title}
+                                              src={item.thumbnailUrl}
+                                              alt={item.title}
                                               className="h-full w-full object-cover"
                                             />
                                           ) : (
@@ -4594,18 +4611,22 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                                         <div className="min-w-0 flex-1">
                                           <div className="flex items-start justify-between gap-2">
                                             <div className="min-w-0">
-                                              <div className="truncate text-sm font-medium">{video.title}</div>
-                                              {video.youtubeVideoId && (
-                                                <div className="text-xs text-muted-foreground">{video.youtubeVideoId}</div>
+                                              <div className="truncate text-sm font-medium">{item.title}</div>
+                                              <div className="text-xs text-muted-foreground">
+                                                {item.adType ? `${item.adType} · ` : ''}
+                                                {item.id}
+                                              </div>
+                                              {'youtubeVideoId' in item && item.youtubeVideoId && (
+                                                <div className="text-xs text-muted-foreground">{item.youtubeVideoId}</div>
                                               )}
                                             </div>
-                                            {video.youtubeUrl && (
+                                            {(item.link || ('youtubeUrl' in item ? item.youtubeUrl : '')) && (
                                               <a
-                                                href={video.youtubeUrl}
+                                                href={item.link || ('youtubeUrl' in item ? item.youtubeUrl : '')}
                                                 target="_blank"
                                                 rel="noreferrer"
                                                 className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border hover:bg-muted"
-                                                title="Abrir video"
+                                                title="Abrir anuncio"
                                               >
                                                 <ExternalLink className="h-4 w-4" />
                                               </a>
@@ -4613,12 +4634,12 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                                           </div>
                                           <div className="mt-2 grid grid-cols-5 gap-2">
                                             {googleAdsConnectedVideoMetricColumns.map((metric) => (
-                                              <div key={`${video.id}-${metric.key}`} className="rounded bg-muted/50 px-2 py-1">
+                                              <div key={`${item.id}-${metric.key}`} className="rounded bg-muted/50 px-2 py-1">
                                                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                                                   {metric.label}
                                                 </div>
                                                 <div className="text-xs font-medium">
-                                                  {formatDistributionMetricValue(Number(video[metric.key] || 0), metric.format)}
+                                                  {formatDistributionMetricValue(Number(item[metric.key] || 0), metric.format)}
                                                 </div>
                                               </div>
                                             ))}
