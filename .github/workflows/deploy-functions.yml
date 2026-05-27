@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      PROJECT_ID: ufksgrounhmfafdajbrr
+      PROJECT_ID: hzstynttwwjlhvywemml
     steps:
       - uses: actions/checkout@v3
       
@@ -27,6 +27,9 @@ jobs:
 
       - name: Deploy google-sheets
         run: supabase functions deploy google-sheets --project-ref $PROJECT_ID --no-verify-jwt
+
+      - name: Deploy google-ads-api
+        run: supabase functions deploy google-ads-api --project-ref $PROJECT_ID --no-verify-jwt
 
       - name: Deploy validate-share-token
         run: supabase functions deploy validate-share-token --project-ref $PROJECT_ID --no-verify-jwt
