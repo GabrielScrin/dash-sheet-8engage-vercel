@@ -69,6 +69,9 @@ interface GoogleAdsCampaignMetricRow {
     thumbnailUrl?: string;
     spend: number;
     impressions: number;
+    clicks: number;
+    conversions: number;
+    averageCpc: number;
     uniqueUsers: number;
     averageFrequency: number;
     averageCpv: number;
@@ -4376,6 +4379,17 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     [],
   );
 
+  const googleAdsConnectedAdMetricColumns = useMemo(
+    () => [
+      { key: 'spend', label: 'Custo', format: 'currency' as const },
+      { key: 'impressions', label: 'Impressoes', format: 'number' as const },
+      { key: 'clicks', label: 'Cliques', format: 'number' as const },
+      { key: 'averageCpc', label: 'CPC', format: 'currency' as const },
+      { key: 'conversions', label: 'Conv.', format: 'number' as const },
+    ],
+    [],
+  );
+
   const isLoading =
     loadingProject ||
     (loadingMappings && !(shareToken && initialMappings)) ||
@@ -4592,7 +4606,11 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                               <div className="text-xs text-muted-foreground">{campaign.id}</div>
                               {activeTab === 'consideracao' && ((campaign.ads || []).length > 0 || (campaign.videos || []).length > 0) && (
                                 <div className="mt-3 space-y-2">
-                                  {((campaign.ads || []).length > 0 ? (campaign.ads || []) : (campaign.videos || [])).map((item) => (
+                                  {((campaign.ads || []).length > 0 ? (campaign.ads || []) : (campaign.videos || [])).map((item) => {
+                                    const detailMetrics = (campaign.ads || []).length > 0
+                                      ? googleAdsConnectedAdMetricColumns
+                                      : googleAdsConnectedVideoMetricColumns;
+                                    return (
                                     <div key={item.id} className="rounded-md border bg-background/40 p-2">
                                       <div className="flex items-start gap-3">
                                         <div className="h-14 w-24 overflow-hidden rounded border bg-muted shrink-0">
@@ -4633,7 +4651,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                                             )}
                                           </div>
                                           <div className="mt-2 grid grid-cols-5 gap-2">
-                                            {googleAdsConnectedVideoMetricColumns.map((metric) => (
+                                            {detailMetrics.map((metric) => (
                                               <div key={`${item.id}-${metric.key}`} className="rounded bg-muted/50 px-2 py-1">
                                                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                                                   {metric.label}
@@ -4647,7 +4665,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                                         </div>
                                       </div>
                                     </div>
-                                  ))}
+                                  )})}
                                 </div>
                               )}
                             </td>
