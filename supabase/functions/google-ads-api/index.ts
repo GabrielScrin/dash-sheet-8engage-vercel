@@ -747,7 +747,7 @@ Deno.serve(async (req) => {
         }>;
       }>;
 
-      const [tsRes, campRes, adsRes] = await Promise.all([
+      const [tsRes, campRes] = await Promise.all([
         googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
           method: "POST",
           body: JSON.stringify({ query: timeseriesQuery }),
@@ -756,11 +756,22 @@ Deno.serve(async (req) => {
           method: "POST",
           body: JSON.stringify({ query: campaignsQuery }),
         }),
-        googleAdsRequest<AdsBatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
-          method: "POST",
-          body: JSON.stringify({ query: adsQuery }),
-        }),
       ]);
+
+      let adsRes: AdsBatchResult = [];
+      try {
+        adsRes = await googleAdsRequest<AdsBatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          {
+            method: "POST",
+            body: JSON.stringify({ query: adsQuery }),
+          },
+        );
+      } catch (error) {
+        console.error("Google Ads ads query failed", error);
+      }
 
       let videoAdsRes: VideoAdsBatchResult = [];
       try {
