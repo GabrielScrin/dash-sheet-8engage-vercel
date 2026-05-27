@@ -620,6 +620,22 @@ Deno.serve(async (req) => {
         "AND campaign.advertising_channel_type = 'VIDEO'",
       ].join(" ");
 
+      const videoAdAssetsFallbackQuery = [
+        "SELECT campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.video_responsive_ad.videos.asset,",
+        "metrics.cost_micros, metrics.impressions, metrics.trueview_average_cpv, metrics.video_trueview_views,",
+        "metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate, metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate",
+        "FROM ad_group_ad",
+        `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+        "AND campaign.status != 'REMOVED'",
+        "AND campaign.advertising_channel_type = 'VIDEO'",
+      ].join(" ");
+
+      const videoAssetsQuery = [
+        "SELECT asset.resource_name, asset.id, asset.name, asset.youtube_video_asset.youtube_video_id, asset.type",
+        "FROM asset",
+        "WHERE asset.type = 'YOUTUBE_VIDEO'",
+      ].join(" ");
+
       type BatchResult = Array<{
         results?: Array<{
           segments?: { date?: string };
@@ -658,6 +674,42 @@ Deno.serve(async (req) => {
         }>;
       }>;
 
+      type VideoAdAssetsFallbackBatchResult = Array<{
+        results?: Array<{
+          campaign?: { id?: string; name?: string };
+          adGroupAd?: {
+            ad?: {
+              id?: string;
+              videoResponsiveAd?: {
+                videos?: Array<{ asset?: string }>;
+              };
+            };
+          };
+          metrics?: {
+            costMicros?: string;
+            impressions?: string;
+            trueviewAverageCpv?: number;
+            videoTrueviewViews?: string;
+            videoQuartileP25Rate?: number;
+            videoQuartileP50Rate?: number;
+            videoQuartileP75Rate?: number;
+            videoQuartileP100Rate?: number;
+          };
+        }>;
+      }>;
+
+      type VideoAssetBatchResult = Array<{
+        results?: Array<{
+          asset?: {
+            resourceName?: string;
+            id?: string;
+            name?: string;
+            youtubeVideoAsset?: { youtubeVideoId?: string };
+            type?: string;
+          };
+        }>;
+      }>;
+
       const [tsRes, campRes] = await Promise.all([
         googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
           method: "POST",
@@ -682,6 +734,71 @@ Deno.serve(async (req) => {
         );
       } catch (error) {
         console.error("Google Ads video ads query failed", error);
+      }
+
+      let videoAssetMap = new Map<string, { title: string; youtubeVideoId: string; youtubeUrl: string; thumbnailUrl: string }>();
+      if (!videoAdsRes.length) {
+        let fallbackVideoAdsRes: VideoAdAssetsFallbackBatchResult = [];
+        try {
+          fallbackVideoAdsRes = await googleAdsRequest<VideoAdAssetsFallbackBatchResult>(
+            accessToken,
+            typedConnection,
+            `/customers/${customerId}/googleAds:searchStream`,
+            {
+              method: "POST",
+              body: JSON.stringify({ query: videoAdAssetsFallbackQuery }),
+            },
+          );
+        } catch (error) {
+          console.error("Google Ads video asset fallback query failed", error);
+        }
+
+        if (fallbackVideoAdsRes.length) {
+          try {
+            const videoAssetsRes = await googleAdsRequest<VideoAssetBatchResult>(
+              accessToken,
+              typedConnection,
+              `/customers/${customerId}/googleAds:searchStream`,
+              {
+                method: "POST",
+                body: JSON.stringify({ query: videoAssetsQuery }),
+              },
+            );
+            for (const batch of (Array.isArray(videoAssetsRes) ? videoAssetsRes : [videoAssetsRes])) {
+              for (const result of (batch.results || [])) {
+                const resourceName = String(result.asset?.resourceName || "");
+                const youtubeVideoId = String(result.asset?.youtubeVideoAsset?.youtubeVideoId || "");
+                if (!resourceName || !youtubeVideoId) continue;
+                videoAssetMap.set(resourceName, {
+                  title: String(result.asset?.name || youtubeVideoId),
+                  youtubeVideoId,
+                  youtubeUrl: `https://www.youtube.com/watch?v=${youtubeVideoId}`,
+                  thumbnailUrl: `https://i.ytimg.com/vi/${youtubeVideoId}/hqdefault.jpg`,
+                });
+              }
+            }
+          } catch (error) {
+            console.error("Google Ads asset lookup for videos failed", error);
+          }
+
+          videoAdsRes = fallbackVideoAdsRes.map((batch) => ({
+            results: (batch.results || []).flatMap((result) => {
+              const assets = result.adGroupAd?.ad?.videoResponsiveAd?.videos || [];
+              return assets.map((assetRef) => {
+                const assetName = String(assetRef?.asset || "");
+                const assetData = videoAssetMap.get(assetName);
+                return {
+                  campaign: result.campaign,
+                  video: {
+                    id: assetData?.youtubeVideoId || assetName,
+                    title: assetData?.title || assetName,
+                  },
+                  metrics: result.metrics,
+                };
+              });
+            }),
+          }));
+        }
       }
 
       const byDate = new Map<string, { date: string; spend: number; conversions: number; impressions: number; clicks: number }>();
