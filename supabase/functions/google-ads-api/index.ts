@@ -36,6 +36,9 @@ const normalizeComparisonText = (value: string | null | undefined) =>
 const looksLikeYouTubeVideoId = (value: string | null | undefined) =>
   /^[a-zA-Z0-9_-]{11}$/.test(String(value || "").trim());
 
+const looksLikeNumericId = (value: string | null | undefined) =>
+  /^\d+$/.test(String(value || "").trim());
+
 function base64UrlEncode(input: string) {
   const bytes = new TextEncoder().encode(input);
   let binary = "";
@@ -622,7 +625,12 @@ Deno.serve(async (req) => {
       ].join(" ");
 
       const adsQuery = [
-        "SELECT campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type, ad_group_ad.ad.final_urls, ad_group_ad.ad.video_responsive_ad.videos.asset,",
+        "SELECT campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type, ad_group_ad.ad.final_urls,",
+        "ad_group_ad.ad.video_responsive_ad.videos.asset,",
+        "ad_group_ad.ad.demand_gen_video_responsive_ad.videos.asset,",
+        "ad_group_ad.ad.demand_gen_video_responsive_ad.headlines,",
+        "ad_group_ad.ad.demand_gen_video_responsive_ad.long_headlines,",
+        "ad_group_ad.ad.demand_gen_video_responsive_ad.business_name,",
         "metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions",
         "FROM ad_group_ad",
         `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
@@ -713,6 +721,12 @@ Deno.serve(async (req) => {
               finalUrls?: string[];
               videoResponsiveAd?: {
                 videos?: Array<{ asset?: string }>;
+              };
+              demandGenVideoResponsiveAd?: {
+                videos?: Array<{ asset?: string }>;
+                headlines?: Array<{ text?: string }>;
+                longHeadlines?: Array<{ text?: string }>;
+                businessName?: { text?: string };
               };
             };
           };
@@ -1042,12 +1056,27 @@ Deno.serve(async (req) => {
           const conversions = Number(result.metrics?.conversions || 0);
           const finalUrls = Array.isArray(result.adGroupAd?.ad?.finalUrls) ? result.adGroupAd?.ad?.finalUrls : [];
           const link = String(finalUrls?.[0] || "");
-          const title = String(result.adGroupAd?.ad?.name || result.adGroupAd?.ad?.id || adId);
           const adType = String(result.adGroupAd?.ad?.type || "");
-          const adVideoAssets = result.adGroupAd?.ad?.videoResponsiveAd?.videos || [];
+          const demandGenAd = result.adGroupAd?.ad?.demandGenVideoResponsiveAd;
+          const adVideoAssets = [
+            ...(result.adGroupAd?.ad?.videoResponsiveAd?.videos || []),
+            ...(demandGenAd?.videos || []),
+          ];
           const matchedAsset = adVideoAssets
             .map((assetRef) => videoAssetMap.get(String(assetRef?.asset || "")))
             .find(Boolean);
+          const demandGenLongHeadline = String(demandGenAd?.longHeadlines?.[0]?.text || "").trim();
+          const demandGenHeadline = String(demandGenAd?.headlines?.[0]?.text || "").trim();
+          const demandGenBusinessName = String(demandGenAd?.businessName?.text || "").trim();
+          const adName = String(result.adGroupAd?.ad?.name || "").trim();
+          const title = [
+            !looksLikeNumericId(adName) ? adName : "",
+            demandGenLongHeadline,
+            demandGenHeadline,
+            matchedAsset?.title || "",
+            demandGenBusinessName,
+            adId,
+          ].find((value) => String(value || "").trim()) || adId;
 
           const current = adAgg.get(adId) || {
             campaignId,
