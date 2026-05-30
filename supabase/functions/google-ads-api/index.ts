@@ -1173,12 +1173,14 @@ Deno.serve(async (req) => {
       }
 
       for (const video of videoAgg.values()) {
+        if (video.spend <= 0) continue;
         const current = videosByCampaign.get(video.campaignId) || [];
         current.push(video);
         videosByCampaign.set(video.campaignId, current);
       }
 
       for (const ad of adAgg.values()) {
+        if (ad.spend <= 0) continue;
         if (!ad.thumbnailUrl || !ad.youtubeUrl) {
           const relatedVideos = videosByCampaign.get(ad.campaignId) || [];
           const normalizedAdTitle = normalizeComparisonText(ad.title);
@@ -1205,7 +1207,11 @@ Deno.serve(async (req) => {
         ...campaign,
         ads: (adsByCampaign.get(campaign.id) || []).sort((a, b) => b.spend - a.spend),
         videos: (videosByCampaign.get(campaign.id) || []).sort((a, b) => b.spend - a.spend),
-      }));
+      }))
+        .filter((campaign) => {
+          if (String(campaign.campaignType || "").toUpperCase() === "SEARCH") return true;
+          return (campaign.ads?.length || 0) > 0 || (campaign.videos?.length || 0) > 0;
+        });
 
       const totals = timeseries.reduce(
         (acc, r) => ({ spend: acc.spend + r.spend, conversions: acc.conversions + r.conversions, impressions: acc.impressions + r.impressions }),
