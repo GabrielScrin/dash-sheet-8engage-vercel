@@ -626,12 +626,27 @@ Deno.serve(async (req) => {
 
       const adsQuery = [
         "SELECT campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type, ad_group_ad.ad.final_urls,",
-        "ad_group_ad.ad.video_responsive_ad.videos.asset,",
+        "metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions",
+        "FROM ad_group_ad",
+        `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+        "AND campaign.status != 'REMOVED'",
+        "AND ad_group_ad.status != 'REMOVED'",
+      ].join(" ");
+
+      const videoResponsiveAdAssetsQuery = [
+        "SELECT campaign.id, ad_group_ad.ad.id, ad_group_ad.ad.video_responsive_ad.videos.asset",
+        "FROM ad_group_ad",
+        `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+        "AND campaign.status != 'REMOVED'",
+        "AND ad_group_ad.status != 'REMOVED'",
+      ].join(" ");
+
+      const demandGenVideoAdDetailsQuery = [
+        "SELECT campaign.id, ad_group_ad.ad.id,",
         "ad_group_ad.ad.demand_gen_video_responsive_ad.videos.asset,",
         "ad_group_ad.ad.demand_gen_video_responsive_ad.headlines,",
         "ad_group_ad.ad.demand_gen_video_responsive_ad.long_headlines,",
-        "ad_group_ad.ad.demand_gen_video_responsive_ad.business_name,",
-        "metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions",
+        "ad_group_ad.ad.demand_gen_video_responsive_ad.business_name",
         "FROM ad_group_ad",
         `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
         "AND campaign.status != 'REMOVED'",
@@ -719,6 +734,23 @@ Deno.serve(async (req) => {
               name?: string;
               type?: string;
               finalUrls?: string[];
+            };
+          };
+          metrics?: {
+            costMicros?: string;
+            impressions?: string;
+            clicks?: string;
+            conversions?: number;
+          };
+        }>;
+      }>;
+
+      type AdCreativeDetailsBatchResult = Array<{
+        results?: Array<{
+          campaign?: { id?: string; name?: string };
+          adGroupAd?: {
+            ad?: {
+              id?: string;
               videoResponsiveAd?: {
                 videos?: Array<{ asset?: string }>;
               };
@@ -729,12 +761,6 @@ Deno.serve(async (req) => {
                 businessName?: { text?: string };
               };
             };
-          };
-          metrics?: {
-            costMicros?: string;
-            impressions?: string;
-            clicks?: string;
-            conversions?: number;
           };
         }>;
       }>;
@@ -876,6 +902,87 @@ Deno.serve(async (req) => {
         }
       } catch (error) {
         console.error("Google Ads asset lookup for videos failed", error);
+      }
+
+      const adCreativeDetails = new Map<string, {
+        title?: string;
+        youtubeVideoId?: string;
+        youtubeUrl?: string;
+        thumbnailUrl?: string;
+      }>();
+
+      const mergeAdCreativeDetails = (adId: string, details: {
+        title?: string;
+        youtubeVideoId?: string;
+        youtubeUrl?: string;
+        thumbnailUrl?: string;
+      }) => {
+        if (!adId) return;
+        const current = adCreativeDetails.get(adId) || {};
+        adCreativeDetails.set(adId, {
+          title: current.title || details.title,
+          youtubeVideoId: current.youtubeVideoId || details.youtubeVideoId,
+          youtubeUrl: current.youtubeUrl || details.youtubeUrl,
+          thumbnailUrl: current.thumbnailUrl || details.thumbnailUrl,
+        });
+      };
+
+      const readAdCreativeDetails = (result: {
+        adGroupAd?: {
+          ad?: {
+            id?: string;
+            videoResponsiveAd?: { videos?: Array<{ asset?: string }> };
+            demandGenVideoResponsiveAd?: {
+              videos?: Array<{ asset?: string }>;
+              headlines?: Array<{ text?: string }>;
+              longHeadlines?: Array<{ text?: string }>;
+              businessName?: { text?: string };
+            };
+          };
+        };
+      }) => {
+        const adId = String(result.adGroupAd?.ad?.id || "");
+        const demandGenAd = result.adGroupAd?.ad?.demandGenVideoResponsiveAd;
+        const adVideoAssets = [
+          ...(result.adGroupAd?.ad?.videoResponsiveAd?.videos || []),
+          ...(demandGenAd?.videos || []),
+        ];
+        const matchedAsset = adVideoAssets
+          .map((assetRef) => videoAssetMap.get(String(assetRef?.asset || "")))
+          .find(Boolean);
+        const title = [
+          String(demandGenAd?.longHeadlines?.[0]?.text || "").trim(),
+          String(demandGenAd?.headlines?.[0]?.text || "").trim(),
+          matchedAsset?.title || "",
+          String(demandGenAd?.businessName?.text || "").trim(),
+        ].find((value) => String(value || "").trim());
+        mergeAdCreativeDetails(adId, {
+          title,
+          youtubeVideoId: matchedAsset?.youtubeVideoId,
+          youtubeUrl: matchedAsset?.youtubeUrl,
+          thumbnailUrl: matchedAsset?.thumbnailUrl,
+        });
+      };
+
+      for (const query of [videoResponsiveAdAssetsQuery, demandGenVideoAdDetailsQuery]) {
+        try {
+          const detailsRes = await googleAdsRequest<AdCreativeDetailsBatchResult>(
+            accessToken,
+            typedConnection,
+            `/customers/${customerId}/googleAds:searchStream`,
+            {
+              method: "POST",
+              body: JSON.stringify({ query }),
+            },
+          );
+          for (const batch of (Array.isArray(detailsRes) ? detailsRes : [detailsRes])) {
+            for (const result of (batch.results || [])) {
+              readAdCreativeDetails(result);
+            }
+          }
+        } catch (error) {
+          console.error("Google Ads ad creative details query failed", error);
+        }
       }
 
       if (!videoAdsRes.length && fallbackVideoAdsRes.length) {
@@ -1057,25 +1164,12 @@ Deno.serve(async (req) => {
           const finalUrls = Array.isArray(result.adGroupAd?.ad?.finalUrls) ? result.adGroupAd?.ad?.finalUrls : [];
           const link = String(finalUrls?.[0] || "");
           const adType = String(result.adGroupAd?.ad?.type || "");
-          const demandGenAd = result.adGroupAd?.ad?.demandGenVideoResponsiveAd;
-          const adVideoAssets = [
-            ...(result.adGroupAd?.ad?.videoResponsiveAd?.videos || []),
-            ...(demandGenAd?.videos || []),
-          ];
-          const matchedAsset = adVideoAssets
-            .map((assetRef) => videoAssetMap.get(String(assetRef?.asset || "")))
-            .find(Boolean);
-          const demandGenLongHeadline = String(demandGenAd?.longHeadlines?.[0]?.text || "").trim();
-          const demandGenHeadline = String(demandGenAd?.headlines?.[0]?.text || "").trim();
-          const demandGenBusinessName = String(demandGenAd?.businessName?.text || "").trim();
+          const creativeDetails = adCreativeDetails.get(adId);
           const adName = String(result.adGroupAd?.ad?.name || "").trim();
           const title = [
             !looksLikeNumericId(adName) ? adName : "",
-            demandGenLongHeadline,
-            demandGenHeadline,
-            matchedAsset?.title || "",
-            demandGenBusinessName,
-            adId,
+            creativeDetails?.title || "",
+            looksLikeNumericId(adId) ? "Anuncio sem nome no Google Ads" : adId,
           ].find((value) => String(value || "").trim()) || adId;
 
           const current = adAgg.get(adId) || {
@@ -1083,10 +1177,10 @@ Deno.serve(async (req) => {
             id: adId,
             title,
             adType,
-            link: matchedAsset?.youtubeUrl || link || undefined,
-            thumbnailUrl: matchedAsset?.thumbnailUrl,
-            youtubeVideoId: matchedAsset?.youtubeVideoId,
-            youtubeUrl: matchedAsset?.youtubeUrl,
+            link: creativeDetails?.youtubeUrl || link || undefined,
+            thumbnailUrl: creativeDetails?.thumbnailUrl,
+            youtubeVideoId: creativeDetails?.youtubeVideoId,
+            youtubeUrl: creativeDetails?.youtubeUrl,
             spend: 0,
             impressions: 0,
             uniqueUsers: 0,

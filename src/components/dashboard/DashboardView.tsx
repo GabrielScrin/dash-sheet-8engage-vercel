@@ -4347,7 +4347,6 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
         const summaryCards =
           activeTab === 'descoberta'
             ? [
-                { label: 'Campanhas', value: campaigns.length, format: 'number' as const },
                 { label: 'Custo', value: totals.spend, format: 'currency' as const },
                 { label: 'Impressoes', value: totals.impressions, format: 'number' as const },
                 { label: 'Cliques', value: totals.clicks, format: 'number' as const },
@@ -4360,7 +4359,6 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                 },
               ]
             : [
-                { label: 'Campanhas', value: campaigns.length, format: 'number' as const },
                 { label: 'Custo', value: totals.spend, format: 'currency' as const },
                 { label: 'Visualizacao do TrueView', value: totals.videoViews, format: 'number' as const },
                 { label: 'CPV medio do TrueView', value: totals.videoViews > 0 ? totals.spend / totals.videoViews : 0, format: 'currency' as const },
