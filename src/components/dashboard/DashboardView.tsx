@@ -123,6 +123,22 @@ const getGoogleAdsCampaignTypeLabel = (value: string | null | undefined) => {
   return GOOGLE_ADS_CAMPAIGN_TYPE_LABELS[normalized] || normalized.replace(/_/g, ' ');
 };
 
+const getGoogleVideoThumbnailCandidates = (item: {
+  thumbnailUrl?: string;
+  youtubeVideoId?: string;
+}) => {
+  const candidates = new Set<string>();
+  if (item.thumbnailUrl) candidates.add(item.thumbnailUrl);
+  if (item.youtubeVideoId) {
+    candidates.add(`https://i.ytimg.com/vi/${item.youtubeVideoId}/maxresdefault.jpg`);
+    candidates.add(`https://i.ytimg.com/vi/${item.youtubeVideoId}/sddefault.jpg`);
+    candidates.add(`https://i.ytimg.com/vi/${item.youtubeVideoId}/hqdefault.jpg`);
+    candidates.add(`https://i.ytimg.com/vi/${item.youtubeVideoId}/mqdefault.jpg`);
+    candidates.add(`https://i.ytimg.com/vi/${item.youtubeVideoId}/default.jpg`);
+  }
+  return Array.from(candidates);
+};
+
 function getSourceConfig(config: unknown): MetaSourceConfig | null {
   if (config && typeof config === 'object' && !Array.isArray(config)) {
     return config as MetaSourceConfig;
@@ -4601,7 +4617,8 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                       </thead>
                       <tbody className="divide-y">
                         {group.campaigns.map((campaign) => {
-                          const detailItems = (campaign.ads || []).length > 0 ? (campaign.ads || []) : (campaign.videos || []);
+                          const detailItems = ((campaign.ads || []).length > 0 ? (campaign.ads || []) : (campaign.videos || []))
+                            .filter((item) => Number(item.spend || 0) > 0);
                           const detailMetrics = (campaign.ads || []).length > 0
                             ? googleAdsConnectedAdMetricColumns
                             : googleAdsConnectedVideoMetricColumns;
@@ -4610,8 +4627,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                             <React.Fragment key={campaign.id}>
                               <tr className="hover:bg-muted/30 align-top">
                                 <td className="px-4 py-3">
-                                  <div className="max-w-[400px] break-words font-medium leading-snug">{campaign.name}</div>
-                                  <div className="text-xs text-muted-foreground">{campaign.id}</div>
+                                  <div className="max-w-[420px] break-words font-medium leading-snug">{campaign.name}</div>
                                 </td>
                                 {googleAdsConnectedMetricColumns.map((metric) => (
                                   <td key={`${campaign.id}-${String(metric.key)}`} className="px-3 py-3 text-center align-top">
@@ -4622,22 +4638,45 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                               {activeTab === 'consideracao' && detailItems.length > 0 && (
                                 <tr className="bg-muted/10">
                                   <td colSpan={googleAdsConnectedMetricColumns.length + 1} className="px-4 pb-4 pt-0">
-                                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                    <div className="space-y-3">
                                       {detailItems.map((item) => {
                                         const directVideoUrl = ('youtubeUrl' in item && item.youtubeUrl) || item.link || '';
+                                        const thumbnailCandidates = getGoogleVideoThumbnailCandidates({
+                                          thumbnailUrl: item.thumbnailUrl,
+                                          youtubeVideoId: 'youtubeVideoId' in item ? item.youtubeVideoId : undefined,
+                                        });
                                         return (
                                           <div key={item.id} className="rounded-md border bg-background/70 p-3">
                                             <div className="flex items-start gap-3">
-                                              <div className="h-16 w-28 shrink-0 overflow-hidden rounded border bg-muted">
-                                                {item.thumbnailUrl ? (
+                                              <div className="h-20 w-36 shrink-0 overflow-hidden rounded border bg-muted">
+                                                {thumbnailCandidates.length > 0 ? (
                                                   <img
-                                                    src={item.thumbnailUrl}
+                                                    src={thumbnailCandidates[0]}
                                                     alt={item.title}
                                                     className="h-full w-full object-cover"
                                                     loading="lazy"
+                                                    data-thumb-index="0"
+                                                    onError={(event) => {
+                                                      const img = event.currentTarget;
+                                                      const currentIndex = Number(img.dataset.thumbIndex || '0');
+                                                      const nextIndex = currentIndex + 1;
+                                                      const nextSrc = thumbnailCandidates[nextIndex];
+                                                      if (nextSrc) {
+                                                        img.dataset.thumbIndex = String(nextIndex);
+                                                        img.src = nextSrc;
+                                                        return;
+                                                      }
+                                                      img.style.display = 'none';
+                                                      img.parentElement?.querySelector('[data-thumb-fallback]')?.classList.remove('hidden');
+                                                    }}
                                                   />
                                                 ) : (
-                                                  <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                                                  <div className="flex h-full w-full items-center justify-center text-muted-foreground" data-thumb-fallback>
+                                                    <ImageIcon className="h-4 w-4" />
+                                                  </div>
+                                                )}
+                                                {thumbnailCandidates.length > 0 && (
+                                                  <div className="hidden h-full w-full items-center justify-center text-muted-foreground" data-thumb-fallback>
                                                     <ImageIcon className="h-4 w-4" />
                                                   </div>
                                                 )}
@@ -4645,13 +4684,9 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                                               <div className="min-w-0 flex-1">
                                                 <div className="flex items-start justify-between gap-2">
                                                   <div className="min-w-0">
-                                                    <div className="line-clamp-2 text-sm font-medium leading-snug">{item.title}</div>
-                                                    <div className="text-xs text-muted-foreground">
-                                                      {item.adType ? `${item.adType} - ` : ''}
-                                                      {item.id}
-                                                    </div>
-                                                    {'youtubeVideoId' in item && item.youtubeVideoId && (
-                                                      <div className="text-xs text-muted-foreground">{item.youtubeVideoId}</div>
+                                                    <div className="break-words text-sm font-medium leading-snug">{item.title}</div>
+                                                    {item.adType && (
+                                                      <div className="mt-1 text-xs text-muted-foreground">{item.adType}</div>
                                                     )}
                                                   </div>
                                                   {directVideoUrl && (
@@ -4668,13 +4703,13 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                                                 </div>
                                               </div>
                                             </div>
-                                            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-5">
+                                            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
                                               {detailMetrics.map((metric) => (
-                                                <div key={`${item.id}-${metric.key}`} className="rounded bg-muted/50 px-2 py-1.5">
-                                                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                                <div key={`${item.id}-${metric.key}`} className="rounded bg-muted/50 px-2 py-2">
+                                                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground whitespace-normal break-words leading-snug">
                                                     {metric.label}
                                                   </div>
-                                                  <div className="text-xs font-medium">
+                                                  <div className="mt-1 text-sm font-medium leading-snug">
                                                     {formatDistributionMetricValue(Number(item[metric.key] || 0), metric.format)}
                                                   </div>
                                                 </div>
