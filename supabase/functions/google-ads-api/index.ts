@@ -25,6 +25,17 @@ const GOOGLE_ADS_SCOPE = "https://www.googleapis.com/auth/adwords";
 const normalizeCustomerId = (value: string | null | undefined) =>
   String(value || "").replace(/\D/g, "");
 
+const normalizeComparisonText = (value: string | null | undefined) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const looksLikeYouTubeVideoId = (value: string | null | undefined) =>
+  /^[a-zA-Z0-9_-]{11}$/.test(String(value || "").trim());
+
 function base64UrlEncode(input: string) {
   const bytes = new TextEncoder().encode(input);
   let binary = "";
@@ -611,7 +622,7 @@ Deno.serve(async (req) => {
       ].join(" ");
 
       const adsQuery = [
-        "SELECT campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type, ad_group_ad.ad.final_urls,",
+        "SELECT campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type, ad_group_ad.ad.final_urls, ad_group_ad.ad.video_responsive_ad.videos.asset,",
         "metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions",
         "FROM ad_group_ad",
         `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
@@ -700,6 +711,9 @@ Deno.serve(async (req) => {
               name?: string;
               type?: string;
               finalUrls?: string[];
+              videoResponsiveAd?: {
+                videos?: Array<{ asset?: string }>;
+              };
             };
           };
           metrics?: {
@@ -801,69 +815,73 @@ Deno.serve(async (req) => {
         console.error("Google Ads video ads query failed", error);
       }
 
+      let fallbackVideoAdsRes: VideoAdAssetsFallbackBatchResult = [];
+      try {
+        fallbackVideoAdsRes = await googleAdsRequest<VideoAdAssetsFallbackBatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          {
+            method: "POST",
+            body: JSON.stringify({ query: videoAdAssetsFallbackQuery }),
+          },
+        );
+      } catch (error) {
+        console.error("Google Ads video asset fallback query failed", error);
+      }
+
       let videoAssetMap = new Map<string, { title: string; youtubeVideoId: string; youtubeUrl: string; thumbnailUrl: string }>();
-      if (!videoAdsRes.length) {
-        let fallbackVideoAdsRes: VideoAdAssetsFallbackBatchResult = [];
-        try {
-          fallbackVideoAdsRes = await googleAdsRequest<VideoAdAssetsFallbackBatchResult>(
-            accessToken,
-            typedConnection,
-            `/customers/${customerId}/googleAds:searchStream`,
-            {
-              method: "POST",
-              body: JSON.stringify({ query: videoAdAssetsFallbackQuery }),
-            },
-          );
-        } catch (error) {
-          console.error("Google Ads video asset fallback query failed", error);
-        }
-
-        if (fallbackVideoAdsRes.length) {
-          try {
-            const videoAssetsRes = await googleAdsRequest<VideoAssetBatchResult>(
-              accessToken,
-              typedConnection,
-              `/customers/${customerId}/googleAds:searchStream`,
-              {
-                method: "POST",
-                body: JSON.stringify({ query: videoAssetsQuery }),
-              },
-            );
-            for (const batch of (Array.isArray(videoAssetsRes) ? videoAssetsRes : [videoAssetsRes])) {
-              for (const result of (batch.results || [])) {
-                const resourceName = String(result.asset?.resourceName || "");
-                const youtubeVideoId = String(result.asset?.youtubeVideoAsset?.youtubeVideoId || "");
-                if (!resourceName || !youtubeVideoId) continue;
-                videoAssetMap.set(resourceName, {
-                  title: String(result.asset?.name || youtubeVideoId),
-                  youtubeVideoId,
-                  youtubeUrl: `https://www.youtube.com/watch?v=${youtubeVideoId}`,
-                  thumbnailUrl: `https://i.ytimg.com/vi/${youtubeVideoId}/hqdefault.jpg`,
-                });
-              }
+      const videoAssetByNormalizedTitle = new Map<string, { title: string; youtubeVideoId: string; youtubeUrl: string; thumbnailUrl: string }>();
+      try {
+        const videoAssetsRes = await googleAdsRequest<VideoAssetBatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          {
+            method: "POST",
+            body: JSON.stringify({ query: videoAssetsQuery }),
+          },
+        );
+        for (const batch of (Array.isArray(videoAssetsRes) ? videoAssetsRes : [videoAssetsRes])) {
+          for (const result of (batch.results || [])) {
+            const resourceName = String(result.asset?.resourceName || "");
+            const youtubeVideoId = String(result.asset?.youtubeVideoAsset?.youtubeVideoId || "");
+            if (!resourceName || !youtubeVideoId) continue;
+            const assetData = {
+              title: String(result.asset?.name || youtubeVideoId),
+              youtubeVideoId,
+              youtubeUrl: `https://www.youtube.com/watch?v=${youtubeVideoId}`,
+              thumbnailUrl: `https://i.ytimg.com/vi/${youtubeVideoId}/hqdefault.jpg`,
+            };
+            videoAssetMap.set(resourceName, assetData);
+            const normalizedTitle = normalizeComparisonText(assetData.title);
+            if (normalizedTitle && !videoAssetByNormalizedTitle.has(normalizedTitle)) {
+              videoAssetByNormalizedTitle.set(normalizedTitle, assetData);
             }
-          } catch (error) {
-            console.error("Google Ads asset lookup for videos failed", error);
           }
-
-          videoAdsRes = fallbackVideoAdsRes.map((batch) => ({
-            results: (batch.results || []).flatMap((result) => {
-              const assets = result.adGroupAd?.ad?.videoResponsiveAd?.videos || [];
-              return assets.map((assetRef) => {
-                const assetName = String(assetRef?.asset || "");
-                const assetData = videoAssetMap.get(assetName);
-                return {
-                  campaign: result.campaign,
-                  video: {
-                    id: assetData?.youtubeVideoId || assetName,
-                    title: assetData?.title || assetName,
-                  },
-                  metrics: result.metrics,
-                };
-              });
-            }),
-          }));
         }
+      } catch (error) {
+        console.error("Google Ads asset lookup for videos failed", error);
+      }
+
+      if (!videoAdsRes.length && fallbackVideoAdsRes.length) {
+        videoAdsRes = fallbackVideoAdsRes.map((batch) => ({
+          results: (batch.results || []).flatMap((result) => {
+            const assets = result.adGroupAd?.ad?.videoResponsiveAd?.videos || [];
+            return assets.map((assetRef) => {
+              const assetName = String(assetRef?.asset || "");
+              const assetData = videoAssetMap.get(assetName);
+              return {
+                campaign: result.campaign,
+                video: {
+                  id: assetData?.youtubeVideoId || assetName,
+                  title: assetData?.title || assetName,
+                },
+                metrics: result.metrics,
+              };
+            });
+          }),
+        }));
       }
 
       const byDate = new Map<string, { date: string; spend: number; conversions: number; impressions: number; clicks: number }>();
@@ -971,6 +989,8 @@ Deno.serve(async (req) => {
         adType?: string;
         link?: string;
         thumbnailUrl?: string;
+        youtubeVideoId?: string;
+        youtubeUrl?: string;
         spend: number;
         impressions: number;
         uniqueUsers: number;
@@ -993,6 +1013,8 @@ Deno.serve(async (req) => {
         adType?: string;
         link?: string;
         thumbnailUrl?: string;
+        youtubeVideoId?: string;
+        youtubeUrl?: string;
         spend: number;
         impressions: number;
         uniqueUsers: number;
@@ -1022,14 +1044,20 @@ Deno.serve(async (req) => {
           const link = String(finalUrls?.[0] || "");
           const title = String(result.adGroupAd?.ad?.name || result.adGroupAd?.ad?.id || adId);
           const adType = String(result.adGroupAd?.ad?.type || "");
+          const adVideoAssets = result.adGroupAd?.ad?.videoResponsiveAd?.videos || [];
+          const matchedAsset = adVideoAssets
+            .map((assetRef) => videoAssetMap.get(String(assetRef?.asset || "")))
+            .find(Boolean);
 
           const current = adAgg.get(adId) || {
             campaignId,
             id: adId,
             title,
             adType,
-            link: link || undefined,
-            thumbnailUrl: undefined,
+            link: matchedAsset?.youtubeUrl || link || undefined,
+            thumbnailUrl: matchedAsset?.thumbnailUrl,
+            youtubeVideoId: matchedAsset?.youtubeVideoId,
+            youtubeUrl: matchedAsset?.youtubeUrl,
             spend: 0,
             impressions: 0,
             uniqueUsers: 0,
@@ -1098,6 +1126,13 @@ Deno.serve(async (req) => {
           const videoId = String(result.video?.id || "");
           if (!videoId) continue;
           const videoTitle = String(result.video?.title || videoId);
+          const normalizedVideoTitle = normalizeComparisonText(videoTitle);
+          const matchedAsset =
+            videoAssetByNormalizedTitle.get(normalizedVideoTitle) ||
+            Array.from(videoAssetByNormalizedTitle.entries()).find(([key]) =>
+              key && normalizedVideoTitle && (key.includes(normalizedVideoTitle) || normalizedVideoTitle.includes(key))
+            )?.[1];
+          const resolvedYoutubeVideoId = matchedAsset?.youtubeVideoId || (looksLikeYouTubeVideoId(videoId) ? videoId : undefined);
           const spend = Number(result.metrics?.costMicros || 0) / 1_000_000;
           const impressions = Number(result.metrics?.impressions || 0);
           const averageCpv = Number(result.metrics?.trueviewAverageCpv || 0) / 1_000_000;
@@ -1111,9 +1146,9 @@ Deno.serve(async (req) => {
             campaignId,
             videoId,
             title: videoTitle,
-            youtubeVideoId: videoId,
-            youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
-            thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+            youtubeVideoId: resolvedYoutubeVideoId,
+            youtubeUrl: matchedAsset?.youtubeUrl || (resolvedYoutubeVideoId ? `https://www.youtube.com/watch?v=${resolvedYoutubeVideoId}` : undefined),
+            thumbnailUrl: matchedAsset?.thumbnailUrl || (resolvedYoutubeVideoId ? `https://i.ytimg.com/vi/${resolvedYoutubeVideoId}/hqdefault.jpg` : undefined),
             spend: 0,
             impressions: 0,
             uniqueUsers: 0,
@@ -1144,16 +1179,21 @@ Deno.serve(async (req) => {
       }
 
       for (const ad of adAgg.values()) {
-        if (!ad.thumbnailUrl) {
+        if (!ad.thumbnailUrl || !ad.youtubeUrl) {
           const relatedVideos = videosByCampaign.get(ad.campaignId) || [];
-          const normalizedAdTitle = ad.title.trim().toLowerCase();
+          const normalizedAdTitle = normalizeComparisonText(ad.title);
           const matchedVideo =
-            relatedVideos.find((video) => video.title.trim().toLowerCase() === normalizedAdTitle) ||
-            relatedVideos.find((video) => normalizedAdTitle.includes(video.title.trim().toLowerCase()) || video.title.trim().toLowerCase().includes(normalizedAdTitle)) ||
+            relatedVideos.find((video) => normalizeComparisonText(video.title) === normalizedAdTitle) ||
+            relatedVideos.find((video) => {
+              const normalizedVideoTitle = normalizeComparisonText(video.title);
+              return normalizedAdTitle.includes(normalizedVideoTitle) || normalizedVideoTitle.includes(normalizedAdTitle);
+            }) ||
             relatedVideos[0];
           if (matchedVideo) {
-            ad.thumbnailUrl = matchedVideo.thumbnailUrl;
-            if (!ad.link) ad.link = matchedVideo.youtubeUrl;
+            ad.thumbnailUrl = ad.thumbnailUrl || matchedVideo.thumbnailUrl;
+            ad.youtubeVideoId = ad.youtubeVideoId || matchedVideo.youtubeVideoId;
+            ad.youtubeUrl = ad.youtubeUrl || matchedVideo.youtubeUrl;
+            ad.link = matchedVideo.youtubeUrl || ad.link;
           }
         }
         const current = adsByCampaign.get(ad.campaignId) || [];
