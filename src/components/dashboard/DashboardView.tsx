@@ -67,6 +67,8 @@ interface GoogleAdsCampaignMetricRow {
     adType?: string;
     link?: string;
     thumbnailUrl?: string;
+    youtubeVideoId?: string;
+    youtubeUrl?: string;
     spend: number;
     impressions: number;
     clicks: number;
@@ -4585,7 +4587,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                     <table className="w-full min-w-[1180px] text-sm">
                       <thead className="bg-muted/50 border-b">
                         <tr>
-                          <th className="w-[360px] px-4 py-3 text-left font-medium">Campanha</th>
+                          <th className="w-[420px] px-4 py-3 text-left font-medium">Campanha</th>
                           {googleAdsConnectedMetricColumns.map((metric) => (
                             <th
                               key={`${group.typeKey}-${String(metric.key)}`}
@@ -4598,85 +4600,96 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {group.campaigns.map((campaign) => (
-                          <React.Fragment key={campaign.id}>
-                          <tr className="hover:bg-muted/30 align-top">
-                            <td className="px-4 py-3">
-                              <div className="max-w-[340px] break-words font-medium leading-snug">{campaign.name}</div>
-                              <div className="text-xs text-muted-foreground">{campaign.id}</div>
-                              {activeTab === 'consideracao' && ((campaign.ads || []).length > 0 || (campaign.videos || []).length > 0) && (
-                                <div className="mt-3 space-y-2">
-                                  {((campaign.ads || []).length > 0 ? (campaign.ads || []) : (campaign.videos || [])).map((item) => {
-                                    const detailMetrics = (campaign.ads || []).length > 0
-                                      ? googleAdsConnectedAdMetricColumns
-                                      : googleAdsConnectedVideoMetricColumns;
-                                    return (
-                                    <div key={item.id} className="rounded-md border bg-background/40 p-2">
-                                      <div className="flex items-start gap-3">
-                                        <div className="h-14 w-24 overflow-hidden rounded border bg-muted shrink-0">
-                                          {item.thumbnailUrl ? (
-                                            <img
-                                              src={item.thumbnailUrl}
-                                              alt={item.title}
-                                              className="h-full w-full object-cover"
-                                            />
-                                          ) : (
-                                            <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                                              <ImageIcon className="h-4 w-4" />
-                                            </div>
-                                          )}
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                          <div className="flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
-                                              <div className="truncate text-sm font-medium">{item.title}</div>
-                                              <div className="text-xs text-muted-foreground">
-                                                {item.adType ? `${item.adType} · ` : ''}
-                                                {item.id}
+                        {group.campaigns.map((campaign) => {
+                          const detailItems = (campaign.ads || []).length > 0 ? (campaign.ads || []) : (campaign.videos || []);
+                          const detailMetrics = (campaign.ads || []).length > 0
+                            ? googleAdsConnectedAdMetricColumns
+                            : googleAdsConnectedVideoMetricColumns;
+
+                          return (
+                            <React.Fragment key={campaign.id}>
+                              <tr className="hover:bg-muted/30 align-top">
+                                <td className="px-4 py-3">
+                                  <div className="max-w-[400px] break-words font-medium leading-snug">{campaign.name}</div>
+                                  <div className="text-xs text-muted-foreground">{campaign.id}</div>
+                                </td>
+                                {googleAdsConnectedMetricColumns.map((metric) => (
+                                  <td key={`${campaign.id}-${String(metric.key)}`} className="px-3 py-3 text-center align-top">
+                                    {formatDistributionMetricValue(Number(campaign[metric.key] || 0), metric.format)}
+                                  </td>
+                                ))}
+                              </tr>
+                              {activeTab === 'consideracao' && detailItems.length > 0 && (
+                                <tr className="bg-muted/10">
+                                  <td colSpan={googleAdsConnectedMetricColumns.length + 1} className="px-4 pb-4 pt-0">
+                                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                      {detailItems.map((item) => {
+                                        const directVideoUrl = ('youtubeUrl' in item && item.youtubeUrl) || item.link || '';
+                                        return (
+                                          <div key={item.id} className="rounded-md border bg-background/70 p-3">
+                                            <div className="flex items-start gap-3">
+                                              <div className="h-16 w-28 shrink-0 overflow-hidden rounded border bg-muted">
+                                                {item.thumbnailUrl ? (
+                                                  <img
+                                                    src={item.thumbnailUrl}
+                                                    alt={item.title}
+                                                    className="h-full w-full object-cover"
+                                                    loading="lazy"
+                                                  />
+                                                ) : (
+                                                  <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                                                    <ImageIcon className="h-4 w-4" />
+                                                  </div>
+                                                )}
                                               </div>
-                                              {'youtubeVideoId' in item && item.youtubeVideoId && (
-                                                <div className="text-xs text-muted-foreground">{item.youtubeVideoId}</div>
-                                              )}
-                                            </div>
-                                            {(item.link || ('youtubeUrl' in item ? item.youtubeUrl : '')) && (
-                                              <a
-                                                href={item.link || ('youtubeUrl' in item ? item.youtubeUrl : '')}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border hover:bg-muted"
-                                                title="Abrir anuncio"
-                                              >
-                                                <ExternalLink className="h-4 w-4" />
-                                              </a>
-                                            )}
-                                          </div>
-                                          <div className="mt-2 grid grid-cols-5 gap-2">
-                                            {detailMetrics.map((metric) => (
-                                              <div key={`${item.id}-${metric.key}`} className="rounded bg-muted/50 px-2 py-1">
-                                                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                                                  {metric.label}
-                                                </div>
-                                                <div className="text-xs font-medium">
-                                                  {formatDistributionMetricValue(Number(item[metric.key] || 0), metric.format)}
+                                              <div className="min-w-0 flex-1">
+                                                <div className="flex items-start justify-between gap-2">
+                                                  <div className="min-w-0">
+                                                    <div className="line-clamp-2 text-sm font-medium leading-snug">{item.title}</div>
+                                                    <div className="text-xs text-muted-foreground">
+                                                      {item.adType ? `${item.adType} - ` : ''}
+                                                      {item.id}
+                                                    </div>
+                                                    {'youtubeVideoId' in item && item.youtubeVideoId && (
+                                                      <div className="text-xs text-muted-foreground">{item.youtubeVideoId}</div>
+                                                    )}
+                                                  </div>
+                                                  {directVideoUrl && (
+                                                    <a
+                                                      href={directVideoUrl}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border hover:bg-muted"
+                                                      title="Abrir video do anuncio"
+                                                    >
+                                                      <ExternalLink className="h-4 w-4" />
+                                                    </a>
+                                                  )}
                                                 </div>
                                               </div>
-                                            ))}
+                                            </div>
+                                            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-5">
+                                              {detailMetrics.map((metric) => (
+                                                <div key={`${item.id}-${metric.key}`} className="rounded bg-muted/50 px-2 py-1.5">
+                                                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                                    {metric.label}
+                                                  </div>
+                                                  <div className="text-xs font-medium">
+                                                    {formatDistributionMetricValue(Number(item[metric.key] || 0), metric.format)}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
                                           </div>
-                                        </div>
-                                      </div>
+                                        );
+                                      })}
                                     </div>
-                                  )})}
-                                </div>
+                                  </td>
+                                </tr>
                               )}
-                            </td>
-                            {googleAdsConnectedMetricColumns.map((metric) => (
-                              <td key={`${campaign.id}-${String(metric.key)}`} className="px-3 py-3 text-center align-top">
-                                {formatDistributionMetricValue(Number(campaign[metric.key] || 0), metric.format)}
-                              </td>
-                            ))}
-                          </tr>
-                          </React.Fragment>
-                        ))}
+                            </React.Fragment>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
