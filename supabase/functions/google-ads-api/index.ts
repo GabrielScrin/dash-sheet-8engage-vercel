@@ -1225,6 +1225,7 @@ Deno.serve(async (req) => {
             ad.youtubeVideoId = ad.youtubeVideoId || matchedVideo.youtubeVideoId;
             ad.youtubeUrl = ad.youtubeUrl || matchedVideo.youtubeUrl;
             ad.link = matchedVideo.youtubeUrl || ad.link;
+            if (looksLikeNumericId(ad.title)) ad.title = matchedVideo.title;
           }
         }
         const current = adsByCampaign.get(ad.campaignId) || [];

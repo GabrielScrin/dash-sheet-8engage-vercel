@@ -4599,134 +4599,128 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                     </div>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1180px] text-sm">
-                      <thead className="bg-muted/50 border-b">
-                        <tr>
-                          <th className="w-[420px] px-4 py-3 text-left font-medium">Campanha</th>
-                          {googleAdsConnectedMetricColumns.map((metric) => (
-                            <th
-                              key={`${group.typeKey}-${String(metric.key)}`}
-                              className="min-w-[92px] px-3 py-3 text-center font-medium leading-tight whitespace-normal"
-                              title={metric.label}
-                            >
-                              {metric.label}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {group.campaigns.map((campaign) => {
-                          const detailItems = ((campaign.ads || []).length > 0 ? (campaign.ads || []) : (campaign.videos || []))
-                            .filter((item) => Number(item.spend || 0) > 0);
-                          const detailMetrics = (campaign.ads || []).length > 0
-                            ? googleAdsConnectedAdMetricColumns
-                            : googleAdsConnectedVideoMetricColumns;
+                  <div className="space-y-4 p-4">
+                    {group.campaigns.map((campaign) => {
+                      const detailItems = ((campaign.ads || []).length > 0 ? (campaign.ads || []) : (campaign.videos || []))
+                        .filter((item) => Number(item.spend || 0) > 0);
+                      const detailMetrics = (campaign.ads || []).length > 0
+                        ? googleAdsConnectedAdMetricColumns
+                        : googleAdsConnectedVideoMetricColumns;
 
-                          return (
-                            <React.Fragment key={campaign.id}>
-                              <tr className="hover:bg-muted/30 align-top">
-                                <td className="px-4 py-3">
-                                  <div className="max-w-[420px] break-words font-medium leading-snug">{campaign.name}</div>
-                                </td>
-                                {googleAdsConnectedMetricColumns.map((metric) => (
-                                  <td key={`${campaign.id}-${String(metric.key)}`} className="px-3 py-3 text-center align-top">
+                      return (
+                        <div key={campaign.id} className="rounded-md border bg-background/40">
+                          <div className="border-b px-4 py-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <h5 className="break-words text-sm font-semibold leading-snug">{campaign.name}</h5>
+                                {activeTab === 'consideracao' && detailItems.length > 0 && (
+                                  <div className="mt-1 text-xs text-muted-foreground">
+                                    {detailItems.length} {detailItems.length === 1 ? 'anuncio com gasto' : 'anuncios com gasto'}
+                                  </div>
+                                )}
+                              </div>
+                              <Badge variant="secondary">{getGoogleAdsCampaignTypeLabel(campaign.campaignType)}</Badge>
+                            </div>
+                            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                              {googleAdsConnectedMetricColumns.map((metric) => (
+                                <div key={`${campaign.id}-${String(metric.key)}`} className="rounded bg-muted/45 px-3 py-2">
+                                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground whitespace-normal break-words leading-snug">
+                                    {metric.label}
+                                  </div>
+                                  <div className="mt-1 text-sm font-semibold leading-snug">
                                     {formatDistributionMetricValue(Number(campaign[metric.key] || 0), metric.format)}
-                                  </td>
-                                ))}
-                              </tr>
-                              {activeTab === 'consideracao' && detailItems.length > 0 && (
-                                <tr className="bg-muted/10">
-                                  <td colSpan={googleAdsConnectedMetricColumns.length + 1} className="px-4 pb-4 pt-0">
-                                    <div className="space-y-3">
-                                      {detailItems.map((item) => {
-                                        const directVideoUrl = ('youtubeUrl' in item && item.youtubeUrl) || item.link || '';
-                                        const thumbnailCandidates = getGoogleVideoThumbnailCandidates({
-                                          thumbnailUrl: item.thumbnailUrl,
-                                          youtubeVideoId: 'youtubeVideoId' in item ? item.youtubeVideoId : undefined,
-                                        });
-                                        return (
-                                          <div key={item.id} className="rounded-md border bg-background/70 p-3">
-                                            <div className="flex items-start gap-3">
-                                              <div className="h-20 w-36 shrink-0 overflow-hidden rounded border bg-muted">
-                                                {thumbnailCandidates.length > 0 ? (
-                                                  <img
-                                                    src={thumbnailCandidates[0]}
-                                                    alt={item.title}
-                                                    className="h-full w-full object-cover"
-                                                    loading="lazy"
-                                                    data-thumb-index="0"
-                                                    onError={(event) => {
-                                                      const img = event.currentTarget;
-                                                      const currentIndex = Number(img.dataset.thumbIndex || '0');
-                                                      const nextIndex = currentIndex + 1;
-                                                      const nextSrc = thumbnailCandidates[nextIndex];
-                                                      if (nextSrc) {
-                                                        img.dataset.thumbIndex = String(nextIndex);
-                                                        img.src = nextSrc;
-                                                        return;
-                                                      }
-                                                      img.style.display = 'none';
-                                                      img.parentElement?.querySelector('[data-thumb-fallback]')?.classList.remove('hidden');
-                                                    }}
-                                                  />
-                                                ) : (
-                                                  <div className="flex h-full w-full items-center justify-center text-muted-foreground" data-thumb-fallback>
-                                                    <ImageIcon className="h-4 w-4" />
-                                                  </div>
-                                                )}
-                                                {thumbnailCandidates.length > 0 && (
-                                                  <div className="hidden h-full w-full items-center justify-center text-muted-foreground" data-thumb-fallback>
-                                                    <ImageIcon className="h-4 w-4" />
-                                                  </div>
-                                                )}
-                                              </div>
-                                              <div className="min-w-0 flex-1">
-                                                <div className="flex items-start justify-between gap-2">
-                                                  <div className="min-w-0">
-                                                    <div className="break-words text-sm font-medium leading-snug">{item.title}</div>
-                                                    {item.adType && (
-                                                      <div className="mt-1 text-xs text-muted-foreground">{item.adType}</div>
-                                                    )}
-                                                  </div>
-                                                  {directVideoUrl && (
-                                                    <a
-                                                      href={directVideoUrl}
-                                                      target="_blank"
-                                                      rel="noreferrer"
-                                                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border hover:bg-muted"
-                                                      title="Abrir video do anuncio"
-                                                    >
-                                                      <ExternalLink className="h-4 w-4" />
-                                                    </a>
-                                                  )}
-                                                </div>
-                                              </div>
-                                            </div>
-                                            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-                                              {detailMetrics.map((metric) => (
-                                                <div key={`${item.id}-${metric.key}`} className="rounded bg-muted/50 px-2 py-2">
-                                                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground whitespace-normal break-words leading-snug">
-                                                    {metric.label}
-                                                  </div>
-                                                  <div className="mt-1 text-sm font-medium leading-snug">
-                                                    {formatDistributionMetricValue(Number(item[metric.key] || 0), metric.format)}
-                                                  </div>
-                                                </div>
-                                              ))}
-                                            </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {activeTab === 'consideracao' && detailItems.length > 0 && (
+                            <div className="space-y-3 p-3">
+                              {detailItems.map((item) => {
+                                const directVideoUrl = ('youtubeUrl' in item && item.youtubeUrl) || item.link || '';
+                                const thumbnailCandidates = getGoogleVideoThumbnailCandidates({
+                                  thumbnailUrl: item.thumbnailUrl,
+                                  youtubeVideoId: 'youtubeVideoId' in item ? item.youtubeVideoId : undefined,
+                                });
+                                return (
+                                  <div key={item.id} className="rounded-md border bg-card/70 p-3">
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                                      <div className="aspect-video w-full shrink-0 overflow-hidden rounded border bg-muted sm:w-40">
+                                        {thumbnailCandidates.length > 0 ? (
+                                          <img
+                                            src={thumbnailCandidates[0]}
+                                            alt={item.title}
+                                            className="h-full w-full object-cover"
+                                            loading="lazy"
+                                            data-thumb-index="0"
+                                            onError={(event) => {
+                                              const img = event.currentTarget;
+                                              const currentIndex = Number(img.dataset.thumbIndex || '0');
+                                              const nextIndex = currentIndex + 1;
+                                              const nextSrc = thumbnailCandidates[nextIndex];
+                                              if (nextSrc) {
+                                                img.dataset.thumbIndex = String(nextIndex);
+                                                img.src = nextSrc;
+                                                return;
+                                              }
+                                              img.style.display = 'none';
+                                              img.parentElement?.querySelector('[data-thumb-fallback]')?.classList.remove('hidden');
+                                            }}
+                                          />
+                                        ) : (
+                                          <div className="flex h-full w-full items-center justify-center text-muted-foreground" data-thumb-fallback>
+                                            <ImageIcon className="h-4 w-4" />
                                           </div>
-                                        );
-                                      })}
+                                        )}
+                                        {thumbnailCandidates.length > 0 && (
+                                          <div className="hidden h-full w-full items-center justify-center text-muted-foreground" data-thumb-fallback>
+                                            <ImageIcon className="h-4 w-4" />
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div className="min-w-0">
+                                            <div className="break-words text-sm font-medium leading-snug">{item.title}</div>
+                                            {item.adType && (
+                                              <div className="mt-1 text-xs text-muted-foreground">{item.adType}</div>
+                                            )}
+                                          </div>
+                                          {directVideoUrl && (
+                                            <a
+                                              href={directVideoUrl}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border hover:bg-muted"
+                                              title="Abrir video do anuncio"
+                                            >
+                                              <ExternalLink className="h-4 w-4" />
+                                            </a>
+                                          )}
+                                        </div>
+                                      </div>
                                     </div>
-                                  </td>
-                                </tr>
-                              )}
-                            </React.Fragment>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                                      {detailMetrics.map((metric) => (
+                                        <div key={`${item.id}-${metric.key}`} className="rounded bg-muted/50 px-3 py-2">
+                                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground whitespace-normal break-words leading-snug">
+                                            {metric.label}
+                                          </div>
+                                          <div className="mt-1 text-sm font-semibold leading-snug">
+                                            {formatDistributionMetricValue(Number(item[metric.key] || 0), metric.format)}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
