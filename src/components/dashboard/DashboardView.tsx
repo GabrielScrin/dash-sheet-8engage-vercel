@@ -37,8 +37,6 @@ interface MetaSourceConfig {
   sheet_distribuicao?: string | null;
   sheet_consideracao?: string | null;
   sheet_criativos?: string | null;
-  sheet_google_descoberta?: string | null;
-  sheet_google_consideracao?: string | null;
   [key: string]: unknown;
 }
 
@@ -935,14 +933,8 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
   const sheetCriativosName =
     String(sourceConfig?.sheet_criativos || '') ||
     pickConfiguredSheetName(project?.sheet_names as string[] | null | undefined, 3, [/\bcriativ/, /\bcreative/], String(project?.sheet_name || ''));
-  const sheetGoogleDescobertaName =
-    String(sourceConfig?.sheet_google_descoberta || '') ||
-    pickConfiguredSheetName(project?.sheet_names as string[] | null | undefined, 4, [/\bgoogle\b.*\bdescob/, /\bdescob.*\bgoogle/]);
-  const sheetGoogleConsideracaoName =
-    String(sourceConfig?.sheet_google_consideracao || '') ||
-    pickConfiguredSheetName(project?.sheet_names as string[] | null | undefined, 5, [/\bgoogle\b.*\bconsider/, /\bconsider.*\bgoogle/]);
   const hasGoogleSheetConfig =
-    project?.source_type === 'sheet' && Boolean(sheetGoogleDescobertaName && sheetGoogleConsideracaoName);
+    project?.source_type === 'sheet' && Boolean(sourceConfig?.google_ads_customer_id || sourceConfig?.google_ads_customer_name);
   const isGoogleSheetView =
     project?.source_type === 'sheet' && sheetDashboardSource === 'google';
 
@@ -953,8 +945,6 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
         sheetDistribuicaoName,
         sheetConsideracaoName,
         sheetCriativosName,
-        sheetGoogleDescobertaName,
-        sheetGoogleConsideracaoName,
       ].filter(Boolean),
     ),
   );
@@ -1045,14 +1035,6 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     (project?.source_type === 'meta_ads'
       ? (metaInsightsQuery.data || [])
       : (sheetRowsByName[sheetPerpetuaName] || (allSheetsQuery.data as any)?.all || [])) as any[];
-  const googleDiscoverySourceRows =
-    (project?.source_type === 'meta_ads'
-      ? []
-      : (sheetRowsByName[sheetGoogleDescobertaName] || [])) as any[];
-  const googleConsiderationSourceRows =
-    (project?.source_type === 'meta_ads'
-      ? []
-      : (sheetRowsByName[sheetGoogleConsideracaoName] || [])) as any[];
   const discoverySourceRows =
     (project?.source_type === 'meta_ads'
       ? []
@@ -1066,11 +1048,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       ? []
       : (sheetRowsByName[sheetCriativosName] || sheetRowsByName[sheetPerpetuaName] || (allSheetsQuery.data as any)?.all || [])) as any[];
   const distributionSourceRows =
-    (
-      isGoogleSheetView
-        ? (activeTab === 'consideracao' ? googleConsiderationSourceRows : googleDiscoverySourceRows)
-        : (activeTab === 'consideracao' ? considerationSourceRows : discoverySourceRows)
-    ) as any[];
+    (activeTab === 'consideracao' ? considerationSourceRows : discoverySourceRows) as any[];
   const metaAccountRows = (metaAccountInsightsQuery.data || []) as any[];
 
   const sheetDateColumnKey = useMemo(
@@ -1996,11 +1974,8 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
 
   const sheetCampaignOptionRows = useMemo(() => {
     if (project?.source_type === 'meta_ads') return [] as Array<Record<string, unknown>>;
-    if (isGoogleSheetView) {
-      return [...(googleDiscoverySourceRows as Array<Record<string, unknown>>), ...(googleConsiderationSourceRows as Array<Record<string, unknown>>)];
-    }
     return [...(sourceRows as Array<Record<string, unknown>>), ...(discoverySourceRows as Array<Record<string, unknown>>), ...(considerationSourceRows as Array<Record<string, unknown>>)];
-  }, [considerationSourceRows, discoverySourceRows, googleConsiderationSourceRows, googleDiscoverySourceRows, isGoogleSheetView, project?.source_type, sourceRows]);
+  }, [considerationSourceRows, discoverySourceRows, project?.source_type, sourceRows]);
 
   const sheetCampaignOptionColumnKey = useMemo(
     () =>
@@ -2676,122 +2651,6 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     filteredDistributionRows,
     project?.source_type,
   ]);
-
-  const googleDistributionSummary = useMemo(() => {
-    if (!isGoogleSheetView || project?.source_type === 'meta_ads') return null;
-
-    let totalSpend = 0;
-    let totalUsers = 0;
-    let totalImpressions = 0;
-    let totalClicks = 0;
-    let totalVideo25 = 0;
-    let totalVideo50 = 0;
-    let totalVideo75 = 0;
-    let totalVideo100 = 0;
-    let totalTrueview = 0;
-    let totalConversions = 0;
-    let totalFrequencyFromField = 0;
-    let frequencyFieldCount = 0;
-    let totalCpcFromField = 0;
-    let cpcFieldCount = 0;
-    let totalCpvFromField = 0;
-    let cpvFieldCount = 0;
-    let totalCostPerConversionFromField = 0;
-    let costPerConversionFieldCount = 0;
-
-    for (const row of filteredDistributionRows as Array<Record<string, unknown>>) {
-      const spend = parseSheetNumber(distributionSpendColumnKey ? row?.[distributionSpendColumnKey] : 0);
-      const users = parseSheetNumber(distributionReachColumnKey ? row?.[distributionReachColumnKey] : 0);
-      const impressions = parseSheetNumber(distributionImpressionsColumnKey ? row?.[distributionImpressionsColumnKey] : 0);
-      const clicks = parseSheetNumber(distributionLinkClicksColumnKey ? row?.[distributionLinkClicksColumnKey] : 0);
-      const video25 = parseSheetNumber(distributionGoogleVideo25ColumnKey ? row?.[distributionGoogleVideo25ColumnKey] : 0);
-      const video50 = parseSheetNumber(distributionGoogleVideo50ColumnKey ? row?.[distributionGoogleVideo50ColumnKey] : 0);
-      const video75 = parseSheetNumber(distributionGoogleVideo75ColumnKey ? row?.[distributionGoogleVideo75ColumnKey] : 0);
-      const video100 = parseSheetNumber(distributionGoogleVideo100ColumnKey ? row?.[distributionGoogleVideo100ColumnKey] : 0);
-      const trueview = parseSheetNumber(distributionGoogleTrueviewColumnKey ? row?.[distributionGoogleTrueviewColumnKey] : 0);
-      const conversions = parseSheetNumber(distributionGoogleConversionsColumnKey ? row?.[distributionGoogleConversionsColumnKey] : 0);
-      const frequencyFromField = parseSheetNumber(distributionFrequencyColumnKey ? row?.[distributionFrequencyColumnKey] : 0);
-      const cpcFromField = parseSheetNumber(distributionCpcColumnKey ? row?.[distributionCpcColumnKey] : 0);
-      const cpvFromField = parseSheetNumber(distributionGoogleCpvColumnKey ? row?.[distributionGoogleCpvColumnKey] : 0);
-      const costPerConversionFromField = parseSheetNumber(distributionCpaColumnKey ? row?.[distributionCpaColumnKey] : 0);
-
-      totalSpend += spend;
-      totalUsers += users;
-      totalImpressions += impressions;
-      totalClicks += clicks;
-      totalVideo25 += video25;
-      totalVideo50 += video50;
-      totalVideo75 += video75;
-      totalVideo100 += video100;
-      totalTrueview += trueview;
-      totalConversions += conversions;
-
-      if (frequencyFromField > 0) {
-        totalFrequencyFromField += frequencyFromField;
-        frequencyFieldCount += 1;
-      }
-      if (cpcFromField > 0) {
-        totalCpcFromField += cpcFromField;
-        cpcFieldCount += 1;
-      }
-      if (cpvFromField > 0) {
-        totalCpvFromField += cpvFromField;
-        cpvFieldCount += 1;
-      }
-      if (costPerConversionFromField > 0) {
-        totalCostPerConversionFromField += costPerConversionFromField;
-        costPerConversionFieldCount += 1;
-      }
-    }
-
-    return {
-      spend: totalSpend,
-      users: totalUsers,
-      impressions: totalImpressions,
-      frequency:
-        totalUsers > 0
-          ? totalImpressions / totalUsers
-          : (frequencyFieldCount > 0 ? totalFrequencyFromField / frequencyFieldCount : 0),
-      clicks: totalClicks,
-      cpc:
-        totalClicks > 0
-          ? totalSpend / totalClicks
-          : (cpcFieldCount > 0 ? totalCpcFromField / cpcFieldCount : 0),
-      video25: totalVideo25,
-      video50: totalVideo50,
-      video75: totalVideo75,
-      video100: totalVideo100,
-      trueview: totalTrueview,
-      cpv:
-        totalTrueview > 0
-          ? totalSpend / totalTrueview
-          : (cpvFieldCount > 0 ? totalCpvFromField / cpvFieldCount : 0),
-      conversions: totalConversions,
-      costPerConversion:
-        totalConversions > 0
-          ? totalSpend / totalConversions
-          : (costPerConversionFieldCount > 0 ? totalCostPerConversionFromField / costPerConversionFieldCount : 0),
-    };
-  }, [
-    distributionCpaColumnKey,
-    distributionCpcColumnKey,
-    distributionFrequencyColumnKey,
-    distributionGoogleConversionsColumnKey,
-    distributionGoogleCpvColumnKey,
-    distributionGoogleTrueviewColumnKey,
-    distributionGoogleVideo100ColumnKey,
-    distributionGoogleVideo25ColumnKey,
-    distributionGoogleVideo50ColumnKey,
-    distributionGoogleVideo75ColumnKey,
-    distributionImpressionsColumnKey,
-    distributionLinkClicksColumnKey,
-    distributionReachColumnKey,
-    distributionSpendColumnKey,
-    filteredDistributionRows,
-    isGoogleSheetView,
-    project?.source_type,
-  ]);
-
 
   const sheetWeeklyData = useMemo(() => {
     if (project?.source_type === 'meta_ads') return [];
@@ -4167,37 +4026,6 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       ? metaBigNumbers
       : (sheetBigNumbers.length > 0 ? sheetBigNumbers : processedData.bigNumbers);
 
-  const googleSummaryCards = useMemo(() => {
-    if (!isGoogleSheetView || !googleDistributionSummary) return [];
-
-    const baseCards = [
-      { label: 'Custo', value: googleDistributionSummary.spend, format: 'currency' as const },
-      { label: 'Usuarios exclusivos', value: googleDistributionSummary.users, format: 'number' as const },
-      { label: 'Impressoes', value: googleDistributionSummary.impressions, format: 'number' as const },
-      { label: 'Freq. media impr. / usuario', value: googleDistributionSummary.frequency, format: 'decimal' as const },
-      { label: 'CPV medio do TrueView', value: googleDistributionSummary.cpv, format: 'currency' as const },
-      { label: 'Visualizacao do TrueView', value: googleDistributionSummary.trueview, format: 'number' as const },
-    ];
-
-    if (activeTab === 'descoberta') {
-      return [
-        ...baseCards,
-        { label: 'Cliques', value: googleDistributionSummary.clicks, format: 'number' as const },
-        { label: 'CPC medio', value: googleDistributionSummary.cpc, format: 'currency' as const },
-        { label: 'Conversoes', value: googleDistributionSummary.conversions, format: 'number' as const },
-        { label: 'Custo / Conv.', value: googleDistributionSummary.costPerConversion, format: 'currency' as const },
-      ];
-    }
-
-    return [
-      ...baseCards,
-      { label: 'Video assistido ate 25%', value: googleDistributionSummary.video25, format: 'number' as const },
-      { label: 'Video assistido ate 50%', value: googleDistributionSummary.video50, format: 'number' as const },
-      { label: 'Video assistido ate 75%', value: googleDistributionSummary.video75, format: 'number' as const },
-      { label: 'Video assistido ate 100%', value: googleDistributionSummary.video100, format: 'number' as const },
-    ];
-  }, [activeTab, googleDistributionSummary, isGoogleSheetView]);
-
   const googleAdsConnectedCampaigns = useMemo(
     () =>
       (googleAdsCampaignOverviewQuery.data?.campaigns || [])
@@ -4544,7 +4372,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
         <div className="mb-4 flex flex-col gap-1">
           <h3 className="text-lg font-semibold">Google Ads direto da conexao</h3>
           <p className="text-sm text-muted-foreground">
-            Campanhas com gasto no periodo selecionado, usando a conta escolhida no projeto.
+            Campanhas com gasto no periodo selecionado, usando apenas a conta escolhida no projeto.
           </p>
           {(selectedGoogleAccountName || selectedGoogleAccountId) && (
             <p className="text-xs text-muted-foreground">
@@ -4772,7 +4600,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
             type="button"
             variant={sheetDashboardSource === 'google' ? 'default' : 'outline'}
             disabled={!hasGoogleSheetConfig}
-            title={!hasGoogleSheetConfig ? 'Configure as abas do Google na etapa de Conexão' : undefined}
+            title={!hasGoogleSheetConfig ? 'Configure a conexão direta do Google Ads na etapa de Conexão' : undefined}
             onClick={() => {
               setSheetDashboardSource('google');
               setActiveTab((prev) => (prev === 'consideracao' ? 'consideracao' : 'descoberta'));
@@ -4782,7 +4610,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
           </Button>
           {!hasGoogleSheetConfig && !isPreview && !shareToken && (
             <span className="text-xs text-muted-foreground">
-              Configure as abas Google na{' '}
+              Configure a conexão Google Ads na{' '}
               <a
                 href={`/app/projects/${projectId}/config?step=2`}
                 className="underline underline-offset-2 hover:text-foreground"
@@ -4798,9 +4626,9 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       {project?.source_type === 'sheet' && isGoogleSheetView && !hasGoogleSheetConfig && (
         <Alert className="mt-4">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Abas Google não configuradas</AlertTitle>
+          <AlertTitle>Conexao Google Ads nao configurada</AlertTitle>
           <AlertDescription>
-            Vá para a etapa 2 (Conexão) e selecione "Aba da Descoberta Google" e "Aba da Consideracao Google" para habilitar esta visualização.
+            Va para a etapa 2 (Conexao) e vincule uma conta Google Ads para habilitar esta visualizacao.
           </AlertDescription>
         </Alert>
       )}
@@ -5109,7 +4937,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
               <section>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                   {isGoogleSheetView
-                    ? googleSummaryCards.map((card) => (
+                    ? googleAdsConnectedSummaryCards.map((card) => (
                         <BigNumberCard
                           key={`${activeTab}-${card.label}`}
                           label={card.label}
@@ -5175,7 +5003,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
               </section>
 
 
-              {distributionTopCreatives.length > 0 && (
+              {!isGoogleSheetView && distributionTopCreatives.length > 0 && (
                 <section>
                   <h3 className="mb-4 text-lg font-semibold">Melhores Criativos</h3>
                   <div className="rounded-md border bg-card text-card-foreground shadow-sm overflow-hidden">
@@ -5364,7 +5192,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
               <section>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                   {isGoogleSheetView
-                    ? googleSummaryCards.map((card) => (
+                    ? googleAdsConnectedSummaryCards.map((card) => (
                         <BigNumberCard
                           key={`${activeTab}-${card.label}`}
                           label={card.label}
@@ -5430,7 +5258,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
               </section>
 
 
-              {distributionTopCreatives.length > 0 && (
+              {!isGoogleSheetView && distributionTopCreatives.length > 0 && (
                 <section>
                   <h3 className="mb-4 text-lg font-semibold">Melhores Criativos</h3>
                   <div className="rounded-md border bg-card text-card-foreground shadow-sm overflow-hidden">

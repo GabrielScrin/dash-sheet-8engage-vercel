@@ -330,8 +330,6 @@ export default function ProjectConfig() {
             sheet_distribuicao: null,
             sheet_consideracao: null,
             sheet_criativos: null,
-            sheet_google_descoberta: null,
-            sheet_google_consideracao: null,
           },
         })
         .eq('id', project.id);
@@ -350,8 +348,6 @@ export default function ProjectConfig() {
           sheet_distribuicao: null,
           sheet_consideracao: null,
           sheet_criativos: null,
-          sheet_google_descoberta: null,
-          sheet_google_consideracao: null,
         },
       });
       setSheetSelectorOpen(false);
@@ -396,21 +392,15 @@ export default function ProjectConfig() {
     distribuicao,
     consideracao,
     criativos,
-    googleDescoberta,
-    googleConsideracao,
   }: {
     perpetua: string;
     distribuicao: string;
     consideracao: string;
     criativos: string;
-    googleDescoberta: string | null;
-    googleConsideracao: string | null;
   }) => {
     if (!project) return;
     try {
-      const sheetNames = Array.from(
-        new Set([perpetua, distribuicao, consideracao, criativos, googleDescoberta, googleConsideracao].filter(Boolean)),
-      ) as string[];
+      const sheetNames = Array.from(new Set([perpetua, distribuicao, consideracao, criativos].filter(Boolean))) as string[];
       const { error } = await supabase
         .from('projects')
         .update({
@@ -422,8 +412,6 @@ export default function ProjectConfig() {
             sheet_distribuicao: distribuicao,
             sheet_consideracao: consideracao,
             sheet_criativos: criativos,
-            sheet_google_descoberta: googleDescoberta,
-            sheet_google_consideracao: googleConsideracao,
           },
         })
         .eq('id', project.id);
@@ -440,8 +428,6 @@ export default function ProjectConfig() {
           sheet_distribuicao: distribuicao,
           sheet_consideracao: consideracao,
           sheet_criativos: criativos,
-          sheet_google_descoberta: googleDescoberta,
-          sheet_google_consideracao: googleConsideracao,
         },
       });
       setCurrentStep(2);
@@ -947,19 +933,6 @@ export default function ProjectConfig() {
                     </div>
                   </div>
                 )}
-                {(project.source_config?.sheet_google_descoberta || project.source_config?.sheet_google_consideracao) && (
-                  <div className="rounded-lg border p-4 bg-muted/50">
-                    <p className="text-sm text-muted-foreground mb-2">Abas Google selecionadas:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {project.source_config?.sheet_google_descoberta && (
-                        <Badge variant="secondary">{project.source_config.sheet_google_descoberta}</Badge>
-                      )}
-                      {project.source_config?.sheet_google_consideracao && (
-                        <Badge variant="secondary">{project.source_config.sheet_google_consideracao}</Badge>
-                      )}
-                    </div>
-                  </div>
-                )}
                 <SheetTabSelector
                   spreadsheetId={project.spreadsheet_id}
                   spreadsheetName={project.spreadsheet_name}
@@ -967,14 +940,12 @@ export default function ProjectConfig() {
                   selectedDistribuicao={project.source_config?.sheet_distribuicao || project.sheet_names?.[1] || project.sheet_names?.[0] || null}
                   selectedConsideracao={project.source_config?.sheet_consideracao || project.sheet_names?.[2] || project.sheet_names?.[1] || project.sheet_names?.[0] || null}
                   selectedCriativos={project.source_config?.sheet_criativos || project.sheet_names?.[3] || project.sheet_names?.[2] || project.sheet_names?.[1] || project.sheet_names?.[0] || null}
-                  selectedGoogleDescoberta={project.source_config?.sheet_google_descoberta || null}
-                  selectedGoogleConsideracao={project.source_config?.sheet_google_consideracao || null}
                   onSelect={handleTabsSelect}
                   onBack={() => setCurrentStep(1)}
                 />
               </div>
             )}
-            {renderGoogleAdsConnectionCard('Escolha a conta Google Ads deste projeto para exibir, no preview, as campanhas com gasto do periodo selecionado abaixo da visualizacao Google da planilha.')}
+            {renderGoogleAdsConnectionCard('Escolha a conta Google Ads deste projeto para exibir a visualizacao Google do preview pela conexao direta.')}
           </div>
         );
       case 3:
