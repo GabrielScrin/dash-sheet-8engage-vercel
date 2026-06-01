@@ -4114,7 +4114,6 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     );
 
     const baseCards = [
-      { label: 'Campanhas', value: googleAdsConnectedCampaigns.length, format: 'number' as const },
       { label: 'Custo', value: totals.spend, format: 'currency' as const },
       { label: 'Usuarios exclusivos', value: totals.uniqueUsers, format: 'number' as const },
       { label: 'Impressoes', value: totals.impressions, format: 'number' as const },
@@ -4957,73 +4956,64 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                   </div>
                 </section>
               )}
-              <section>
+              {!isGoogleSheetView && (
+                <section>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                  {isGoogleSheetView
-                    ? googleAdsConnectedSummaryCards.map((card) => (
-                        <BigNumberCard
-                          key={`${activeTab}-${card.label}`}
-                          label={card.label}
-                          value={card.value}
-                          format={card.format}
-                        />
-                      ))
-                    : (
-                      <>
-                        <BigNumberCard
-                          label="Investimento"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.spend || 0) : (sheetDistributionData?.spend || 0)}
-                          format="currency"
-                        />
-                        <BigNumberCard
-                          label="Alcance"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalReach || 0) : (sheetDistributionData?.totalReach || 0)}
-                          format="number"
-                        />
-                        <BigNumberCard
-                          label="Impressoes"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalImpressions || 0) : (sheetDistributionData?.totalImpressions || 0)}
-                          format="number"
-                        />
-                        <BigNumberCard
-                          label="Frequencia"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.frequency || 0) : (sheetDistributionData?.frequency || 0)}
-                          format="percentage"
-                        />
-                        <BigNumberCard
-                          label="Cliques no Link"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.clicks || 0) : (sheetDistributionData?.totalLinkClicks || 0)}
-                          format="number"
-                        />
-                        <BigNumberCard
-                          label="CPC"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.cpc || 0) : (sheetDistributionData?.cpc || 0)}
-                          format="currency"
-                        />
-                        <BigNumberCard
-                          label="CTR"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.ctr || 0) : (sheetDistributionData?.ctr || 0)}
-                          format="percentage"
-                        />
-                        <BigNumberCard
-                          label="Seguidores"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.followers || 0) : (sheetDistributionData?.followersGained || 0)}
-                          format="number"
-                        />
-                        <BigNumberCard
-                          label="Custo por Seguidor"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.costPerFollower || 0) : (sheetDistributionData?.costPerFollower || 0)}
-                          format="currency"
-                        />
-                        <BigNumberCard
-                          label="Visitas ao Perfil"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.profileVisits || 0) : (sheetDistributionData?.profileVisits || 0)}
-                          format="number"
-                        />
-                      </>
-                    )}
+                  <>
+                    <BigNumberCard
+                      label="Investimento"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.spend || 0) : (sheetDistributionData?.spend || 0)}
+                      format="currency"
+                    />
+                    <BigNumberCard
+                      label="Alcance"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalReach || 0) : (sheetDistributionData?.totalReach || 0)}
+                      format="number"
+                    />
+                    <BigNumberCard
+                      label="Impressoes"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalImpressions || 0) : (sheetDistributionData?.totalImpressions || 0)}
+                      format="number"
+                    />
+                    <BigNumberCard
+                      label="Frequencia"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.frequency || 0) : (sheetDistributionData?.frequency || 0)}
+                      format="percentage"
+                    />
+                    <BigNumberCard
+                      label="Cliques no Link"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.clicks || 0) : (sheetDistributionData?.totalLinkClicks || 0)}
+                      format="number"
+                    />
+                    <BigNumberCard
+                      label="CPC"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.cpc || 0) : (sheetDistributionData?.cpc || 0)}
+                      format="currency"
+                    />
+                    <BigNumberCard
+                      label="CTR"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.ctr || 0) : (sheetDistributionData?.ctr || 0)}
+                      format="percentage"
+                    />
+                    <BigNumberCard
+                      label="Seguidores"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.followers || 0) : (sheetDistributionData?.followersGained || 0)}
+                      format="number"
+                    />
+                    <BigNumberCard
+                      label="Custo por Seguidor"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.costPerFollower || 0) : (sheetDistributionData?.costPerFollower || 0)}
+                      format="currency"
+                    />
+                    <BigNumberCard
+                      label="Visitas ao Perfil"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.profileVisits || 0) : (sheetDistributionData?.profileVisits || 0)}
+                      format="number"
+                    />
+                  </>
                 </div>
-              </section>
+                </section>
+              )}
 
 
               {!isGoogleSheetView && distributionTopCreatives.length > 0 && (
@@ -5212,73 +5202,64 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                   </div>
                 </section>
               )}
-              <section>
+              {!isGoogleSheetView && (
+                <section>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                  {isGoogleSheetView
-                    ? googleAdsConnectedSummaryCards.map((card) => (
-                        <BigNumberCard
-                          key={`${activeTab}-${card.label}`}
-                          label={card.label}
-                          value={card.value}
-                          format={card.format}
-                        />
-                      ))
-                    : (
-                      <>
-                        <BigNumberCard
-                          label="Investimento"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.spend || 0) : (sheetDistributionData?.spend || 0)}
-                          format="currency"
-                        />
-                        <BigNumberCard
-                          label="Alcance"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalReach || 0) : (sheetDistributionData?.totalReach || 0)}
-                          format="number"
-                        />
-                        <BigNumberCard
-                          label="Impressoes"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalImpressions || 0) : (sheetDistributionData?.totalImpressions || 0)}
-                          format="number"
-                        />
-                        <BigNumberCard
-                          label="Frequencia"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.frequency || 0) : (sheetDistributionData?.frequency || 0)}
-                          format="percentage"
-                        />
-                        <BigNumberCard
-                          label="Cliques no Link"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.clicks || 0) : (sheetDistributionData?.totalLinkClicks || 0)}
-                          format="number"
-                        />
-                        <BigNumberCard
-                          label="CPC"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.cpc || 0) : (sheetDistributionData?.cpc || 0)}
-                          format="currency"
-                        />
-                        <BigNumberCard
-                          label="CTR"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.ctr || 0) : (sheetDistributionData?.ctr || 0)}
-                          format="percentage"
-                        />
-                        <BigNumberCard
-                          label="Seguidores"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.followers || 0) : (sheetDistributionData?.followersGained || 0)}
-                          format="number"
-                        />
-                        <BigNumberCard
-                          label="Custo por Seguidor"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.costPerFollower || 0) : (sheetDistributionData?.costPerFollower || 0)}
-                          format="currency"
-                        />
-                        <BigNumberCard
-                          label="Visitas ao Perfil"
-                          value={project?.source_type === 'meta_ads' ? (metaDistributionData?.profileVisits || 0) : (sheetDistributionData?.profileVisits || 0)}
-                          format="number"
-                        />
-                      </>
-                    )}
+                  <>
+                    <BigNumberCard
+                      label="Investimento"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.spend || 0) : (sheetDistributionData?.spend || 0)}
+                      format="currency"
+                    />
+                    <BigNumberCard
+                      label="Alcance"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalReach || 0) : (sheetDistributionData?.totalReach || 0)}
+                      format="number"
+                    />
+                    <BigNumberCard
+                      label="Impressoes"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalImpressions || 0) : (sheetDistributionData?.totalImpressions || 0)}
+                      format="number"
+                    />
+                    <BigNumberCard
+                      label="Frequencia"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.frequency || 0) : (sheetDistributionData?.frequency || 0)}
+                      format="percentage"
+                    />
+                    <BigNumberCard
+                      label="Cliques no Link"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.clicks || 0) : (sheetDistributionData?.totalLinkClicks || 0)}
+                      format="number"
+                    />
+                    <BigNumberCard
+                      label="CPC"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.cpc || 0) : (sheetDistributionData?.cpc || 0)}
+                      format="currency"
+                    />
+                    <BigNumberCard
+                      label="CTR"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.ctr || 0) : (sheetDistributionData?.ctr || 0)}
+                      format="percentage"
+                    />
+                    <BigNumberCard
+                      label="Seguidores"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.followers || 0) : (sheetDistributionData?.followersGained || 0)}
+                      format="number"
+                    />
+                    <BigNumberCard
+                      label="Custo por Seguidor"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.costPerFollower || 0) : (sheetDistributionData?.costPerFollower || 0)}
+                      format="currency"
+                    />
+                    <BigNumberCard
+                      label="Visitas ao Perfil"
+                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.profileVisits || 0) : (sheetDistributionData?.profileVisits || 0)}
+                      format="number"
+                    />
+                  </>
                 </div>
-              </section>
+                </section>
+              )}
 
 
               {!isGoogleSheetView && distributionTopCreatives.length > 0 && (
