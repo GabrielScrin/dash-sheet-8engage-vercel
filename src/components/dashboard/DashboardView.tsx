@@ -2018,7 +2018,25 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   }, [project?.source_type, sheetAdsetOptionColumnKey, sheetCampaignOptionColumnKey, sheetCampaignOptionRows]);
 
-  const campaignOptions = project?.source_type === 'meta_ads' ? metaCampaignOptions : sheetCampaignOptions;
+  const googleCampaignOptions = useMemo(() => {
+    if (!isGoogleSheetView) return [];
+
+    const campaigns = (googleAdsCampaignOverviewQuery.data?.campaigns || [])
+      .filter((campaign) => Number(campaign.spend || 0) > 0)
+      .map((campaign) => ({
+        id: String(campaign.id),
+        name: String(campaign.name || ''),
+        effective_status: Number(campaign.spend || 0) > 0 ? 'ACTIVE' : undefined,
+      }))
+      .filter((campaign) => campaign.id && campaign.name);
+
+    return campaigns.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [googleAdsCampaignOverviewQuery.data, isGoogleSheetView]);
+
+  const campaignOptions =
+    project?.source_type === 'meta_ads'
+      ? metaCampaignOptions
+      : (isGoogleSheetView ? googleCampaignOptions : sheetCampaignOptions);
 
   const metaWeeklyMetricOptions = useMemo(() => {
     const allowedKeys = [
@@ -4030,8 +4048,9 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     () =>
       (googleAdsCampaignOverviewQuery.data?.campaigns || [])
         .filter((campaign) => Number(campaign.spend || 0) > 0)
+        .filter((campaign) => selectedCampaignIds.length === 0 || selectedCampaignIds.includes(String(campaign.id)))
         .filter((campaign) => (activeTab === 'consideracao' ? String(campaign.campaignType || '').toUpperCase() !== 'SEARCH' : true)),
-    [activeTab, googleAdsCampaignOverviewQuery.data],
+    [activeTab, googleAdsCampaignOverviewQuery.data, selectedCampaignIds],
   );
 
   const googleAdsConnectedMetricColumns = useMemo(() => {
@@ -4577,7 +4596,11 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
         dateRange={dateRange}
         onDateRangeChange={setDateRange}
         campaigns={campaignOptions}
-        campaignsLoading={project?.source_type === 'meta_ads' ? metaCampaignsQuery.isLoading : false}
+        campaignsLoading={
+          project?.source_type === 'meta_ads'
+            ? metaCampaignsQuery.isLoading
+            : (isGoogleSheetView ? googleAdsCampaignOverviewQuery.isLoading : false)
+        }
         selectedCampaignIds={selectedCampaignIds}
         onCampaignChange={(ids) => setSelectedCampaignIds(ids)}
         viewMode={viewMode}
