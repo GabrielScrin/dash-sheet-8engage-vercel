@@ -938,7 +938,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       if (data?.code === 'YOUTUBE_SCOPE_REQUIRED') return { requiresYoutubeScope: true };
       return data;
     },
-    enabled: project?.source_type === 'sheet' && !!projectId,
+    enabled: project?.source_type === 'sheet' && sheetDashboardSource === 'google' && !!projectId,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     retry: false,
@@ -981,6 +981,10 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     }
 
     if (sheetDashboardSource === 'google' && activeTab === 'perpetua') {
+      setActiveTab('descoberta');
+    }
+
+    if (sheetDashboardSource === 'meta' && activeTab === 'seguidores') {
       setActiveTab('descoberta');
     }
   }, [activeTab, project?.source_type, sheetDashboardSource]);
@@ -4681,15 +4685,11 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
-        <TabsList className={`grid w-full ${
-          project?.source_type === 'sheet'
-            ? isGoogleSheetView ? 'max-w-lg grid-cols-3' : 'max-w-2xl grid-cols-4'
-            : isGoogleSheetView ? 'max-w-sm grid-cols-2' : 'max-w-md grid-cols-3'
-        }`}>
+        <TabsList className={`grid w-full ${isGoogleSheetView ? 'max-w-lg grid-cols-3' : 'max-w-md grid-cols-3'}`}>
           {!isGoogleSheetView && <TabsTrigger value="perpetua">Perpetua</TabsTrigger>}
           <TabsTrigger value="descoberta">Descoberta</TabsTrigger>
           <TabsTrigger value="consideracao">Consideracao</TabsTrigger>
-          {project?.source_type === 'sheet' && (
+          {isGoogleSheetView && (
             <TabsTrigger value="seguidores" className="gap-1.5">
               <Youtube className="h-3.5 w-3.5 text-red-500" />
               Seguidores
@@ -5458,7 +5458,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
           </TabsContent>
 
           {/* Aba Seguidores - YouTube Analytics */}
-          {project?.source_type === 'sheet' && (
+          {isGoogleSheetView && (
             <TabsContent value="seguidores" className="mt-6">
               <motion.div
                 initial={{ opacity: 0, y: 10 }}

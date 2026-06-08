@@ -233,12 +233,15 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    const isScope = error.message?.includes('YOUTUBE_SCOPE_REQUIRED');
-    return new Response(JSON.stringify({
-      error: error.message,
-      code: isScope ? 'YOUTUBE_SCOPE_REQUIRED' : 'YOUTUBE_ERROR',
-    }), {
-      status: isScope ? 403 : 500,
+    if (error.message?.includes('YOUTUBE_SCOPE_REQUIRED')) {
+      // Retorna 200 para que o supabase-js coloque no `data`, não no `error`
+      return new Response(JSON.stringify({ requiresYoutubeScope: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
