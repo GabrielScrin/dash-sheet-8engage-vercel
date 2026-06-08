@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { Loader2, AlertCircle, RefreshCw, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { Loader2, AlertCircle, RefreshCw, ExternalLink, Image as ImageIcon, Youtube, TrendingUp } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -918,6 +918,30 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       }
     },
     enabled: project?.source_type === 'meta_ads' && !!projectId,
+  });
+
+  // YouTube Analytics Query
+  const youtubeAnalyticsQuery = useQuery({
+    queryKey: ['youtube-analytics', projectId, shareToken],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const providerToken = sessionData.session?.provider_token;
+      const invokeHeaders: Record<string, string> = {};
+      if (providerToken) invokeHeaders['x-google-token'] = providerToken;
+      if (shareToken) invokeHeaders['x-share-token'] = shareToken;
+
+      const { data, error } = await supabase.functions.invoke('youtube-analytics', {
+        headers: invokeHeaders,
+      });
+
+      if (error) throw error;
+      if (data?.code === 'YOUTUBE_SCOPE_REQUIRED') return { requiresYoutubeScope: true };
+      return data;
+    },
+    enabled: project?.source_type === 'sheet' && !!projectId,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    retry: false,
   });
 
   // 3. Fetch Sheet Data from all configured sheets
@@ -4657,10 +4681,20 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
-        <TabsList className={`grid w-full ${isGoogleSheetView ? 'max-w-sm grid-cols-2' : 'max-w-md grid-cols-3'}`}>
+        <TabsList className={`grid w-full ${
+          project?.source_type === 'sheet'
+            ? isGoogleSheetView ? 'max-w-lg grid-cols-3' : 'max-w-2xl grid-cols-4'
+            : isGoogleSheetView ? 'max-w-sm grid-cols-2' : 'max-w-md grid-cols-3'
+        }`}>
           {!isGoogleSheetView && <TabsTrigger value="perpetua">Perpetua</TabsTrigger>}
           <TabsTrigger value="descoberta">Descoberta</TabsTrigger>
           <TabsTrigger value="consideracao">Consideracao</TabsTrigger>
+          {project?.source_type === 'sheet' && (
+            <TabsTrigger value="seguidores" className="gap-1.5">
+              <Youtube className="h-3.5 w-3.5 text-red-500" />
+              Seguidores
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <AnimatePresence mode="wait">
@@ -5422,6 +5456,146 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
               {renderGoogleAdsConnectedCampaignSection()}
             </motion.div>
           </TabsContent>
+
+          {/* Aba Seguidores - YouTube Analytics */}
+          {project?.source_type === 'sheet' && (
+            <TabsContent value="seguidores" className="mt-6">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-6"
+              >
+                {youtubeAnalyticsQuery.isLoading && (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-muted-foreground">Carregando dados do YouTube...</span>
+                  </div>
+                )}
+
+                {youtubeAnalyticsQuery.data?.requiresYoutubeScope && (
+                  <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+                    <div className="rounded-full bg-red-100 p-4 dark:bg-red-900/20">
+                      <Youtube className="h-10 w-10 text-red-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold">Conecte o YouTube Analytics</h3>
+                      <p className="mt-1 text-sm text-muted-foreground max-w-sm mx-auto">
+                        Para ver as estatísticas do canal, reconecte sua conta Google concedendo acesso ao YouTube Analytics.
+                      </p>
+                    </div>
+                    <Button onClick={() => signInWithGoogle()} variant="outline" className="gap-2">
+                      <RefreshCw className="h-4 w-4" />
+                      Reconectar com YouTube
+                    </Button>
+                  </div>
+                )}
+
+                {youtubeAnalyticsQuery.isError && !youtubeAnalyticsQuery.data?.requiresYoutubeScope && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Erro ao carregar dados do YouTube</AlertTitle>
+                    <AlertDescription>
+                      Não foi possível carregar as estatísticas do canal. Tente reconectar sua conta Google.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {youtubeAnalyticsQuery.data && !youtubeAnalyticsQuery.data.requiresYoutubeScope && !youtubeAnalyticsQuery.isError && (() => {
+                  const ytData = youtubeAnalyticsQuery.data;
+                  const channel = ytData.channel || {};
+                  const p28 = ytData.period28Days || {};
+                  const topVideos: any[] = ytData.topVideos?.videos || [];
+                  return (
+                    <>
+                      {/* Hero inscritos */}
+                      <div className="rounded-xl border bg-gradient-to-br from-red-50 to-orange-50 dark:from-red-950/20 dark:to-orange-950/20 p-6">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Youtube className="h-5 w-5 text-red-600 shrink-0" />
+                          <span className="text-sm font-medium text-muted-foreground truncate">
+                            {channel.title || 'Canal YouTube'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-1">Inscritos atuais</p>
+                        <span className="text-4xl font-bold tracking-tight">
+                          {new Intl.NumberFormat('pt-BR').format(channel.subscribers || 0)}
+                        </span>
+                        {(p28.netSubscribers || 0) !== 0 && (
+                          <div className="mt-3 flex items-center gap-1.5">
+                            <TrendingUp className={`h-4 w-4 ${p28.netSubscribers > 0 ? 'text-emerald-600' : 'text-red-500'}`} />
+                            <span className={`text-sm font-medium ${p28.netSubscribers > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                              {p28.netSubscribers > 0 ? '+' : ''}{new Intl.NumberFormat('pt-BR').format(p28.netSubscribers)} nos últimos 28 dias
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Resumo 28 dias */}
+                      <section>
+                        <h3 className="text-sm font-medium text-muted-foreground mb-3">Resumo · Últimos 28 dias</h3>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <BigNumberCard
+                            label="Visualizações"
+                            value={p28.views || 0}
+                            format="number"
+                            subtitle="Últimos 28 dias"
+                            delay={0.1}
+                          />
+                          <BigNumberCard
+                            label="Tempo de Exibição (horas)"
+                            value={p28.watchTimeHours || 0}
+                            format="number"
+                            subtitle="Últimos 28 dias"
+                            delay={0.2}
+                          />
+                        </div>
+                      </section>
+
+                      {/* Top vídeos */}
+                      {topVideos.length > 0 && (
+                        <section>
+                          <h3 className="text-sm font-medium text-muted-foreground mb-3">
+                            Conteúdo Principal · Últimos 7 dias · Visualizações
+                          </h3>
+                          <div className="rounded-lg border overflow-hidden">
+                            <table className="w-full">
+                              <tbody>
+                                {topVideos.map((video, i) => (
+                                  <tr
+                                    key={video.videoId}
+                                    className={`flex items-center gap-3 px-4 py-3 ${i % 2 !== 0 ? 'bg-muted/30' : ''}`}
+                                  >
+                                    <td className="shrink-0">
+                                      <img
+                                        src={video.thumbnailUrl}
+                                        alt={video.title}
+                                        className="h-12 w-20 rounded object-cover bg-muted"
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).src = `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`;
+                                        }}
+                                      />
+                                    </td>
+                                    <td className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium truncate">{video.title}</p>
+                                      <p className="text-xs text-muted-foreground mt-0.5">youtube.com/watch?v={video.videoId}</p>
+                                    </td>
+                                    <td className="shrink-0 text-sm font-semibold tabular-nums text-right">
+                                      {new Intl.NumberFormat('pt-BR', { notation: 'compact', compactDisplay: 'short' }).format(video.views)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </section>
+                      )}
+                    </>
+                  );
+                })()}
+              </motion.div>
+            </TabsContent>
+          )}
         </AnimatePresence>
       </Tabs>
 
