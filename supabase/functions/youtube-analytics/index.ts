@@ -116,6 +116,53 @@ async function getTopVideos(accessToken: string, days = 7) {
   return { videos, startDate, endDate };
 }
 
+async function resolveAccessToken(
+  req: Request,
+  authHeader: string,
+  googleToken: string | null,
+  shareToken: string | null,
+): Promise<string> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  let ownerUserId: string | null = null;
+
+  if (shareToken) {
+    const { data: tokenData, error: tokenError } = await supabase
+      .from("share_tokens")
+      .select("project_id, is_active, expires_at")
+      .eq("token", shareToken)
+      .single();
+
+    if (tokenError || !tokenData?.is_active) throw new Error("INVALID_SHARE_TOKEN");
+    if (tokenData.expires_at && new Date(tokenData.expires_at) < new Date()) throw new Error("SHARE_TOKEN_EXPIRED");
+
+    const { data: project } = await supabase
+      .from("projects")
+      .select("user_id")
+      .eq("id", tokenData.project_id)
+      .single();
+    if (!project) throw new Error("Project owner not found");
+    ownerUserId = project.user_id;
+  } else {
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    if (userError || !user) throw new Error("INVALID_TOKEN");
+    ownerUserId = user.id;
+  }
+
+  const { data: tokenRow } = await supabase
+    .from("service_tokens")
+    .select("refresh_token")
+    .eq("user_id", ownerUserId)
+    .eq("provider", "google")
+    .maybeSingle();
+
+  if (!tokenRow?.refresh_token) throw new Error("GOOGLE_RECONNECT_REQUIRED");
+  return refreshAccessToken(tokenRow.refresh_token);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -134,76 +181,28 @@ serve(async (req) => {
     const shareToken = req.headers.get("x-share-token");
     let accessToken: string;
 
-    if (googleToken) {
-      accessToken = googleToken;
-    } else {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const supabase = createClient(supabaseUrl, supabaseKey);
-      let ownerUserId: string | null = null;
+    accessToken = googleToken ?? await resolveAccessToken(req, authHeader, googleToken, shareToken);
 
-      if (shareToken) {
-        const { data: tokenData, error: tokenError } = await supabase
-          .from("share_tokens")
-          .select("project_id, is_active, expires_at")
-          .eq("token", shareToken)
-          .single();
-
-        if (tokenError || !tokenData?.is_active) {
-          return new Response(JSON.stringify({ error: "Invalid share token" }), {
-            status: 401,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        if (tokenData.expires_at && new Date(tokenData.expires_at) < new Date()) {
-          return new Response(JSON.stringify({ error: "Share token expired" }), {
-            status: 401,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        const { data: project } = await supabase
-          .from("projects")
-          .select("user_id")
-          .eq("id", tokenData.project_id)
-          .single();
-        if (!project) throw new Error("Project owner not found");
-        ownerUserId = project.user_id;
+    let channelData: any, analytics28: any, topVideos: any;
+    try {
+      [channelData, analytics28, topVideos] = await Promise.all([
+        getChannelStats(accessToken),
+        getAnalytics28Days(accessToken),
+        getTopVideos(accessToken, 7),
+      ]);
+    } catch (e: any) {
+      if (e.message?.includes("YOUTUBE_SCOPE_REQUIRED") && googleToken) {
+        // Token da sessão não tem escopo YouTube — tenta via refresh token do banco
+        accessToken = await resolveAccessToken(req, authHeader, googleToken, shareToken);
+        [channelData, analytics28, topVideos] = await Promise.all([
+          getChannelStats(accessToken),
+          getAnalytics28Days(accessToken),
+          getTopVideos(accessToken, 7),
+        ]);
       } else {
-        const token = authHeader.replace("Bearer ", "");
-        const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-        if (userError || !user) {
-          return new Response(JSON.stringify({ error: "Invalid token" }), {
-            status: 401,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        ownerUserId = user.id;
+        throw e;
       }
-
-      const { data: tokenRow, error: tokenError } = await supabase
-        .from("service_tokens")
-        .select("refresh_token")
-        .eq("user_id", ownerUserId)
-        .eq("provider", "google")
-        .maybeSingle();
-
-      if (tokenError || !tokenRow?.refresh_token) {
-        return new Response(JSON.stringify({
-          error: "Google account not connected",
-          code: "GOOGLE_RECONNECT_REQUIRED",
-        }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      accessToken = await refreshAccessToken(tokenRow.refresh_token);
     }
-
-    const [channelData, analytics28, topVideos] = await Promise.all([
-      getChannelStats(accessToken),
-      getAnalytics28Days(accessToken),
-      getTopVideos(accessToken, 7),
-    ]);
 
     const channel = channelData.items?.[0];
     const stats = channel?.statistics || {};
@@ -233,14 +232,33 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    if (error.message?.includes('YOUTUBE_SCOPE_REQUIRED')) {
+    const msg: string = error.message || '';
+    if (msg.includes('YOUTUBE_SCOPE_REQUIRED') || msg.includes('GOOGLE_RECONNECT_REQUIRED')) {
       // Retorna 200 para que o supabase-js coloque no `data`, não no `error`
       return new Response(JSON.stringify({ requiresYoutubeScope: true }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    return new Response(JSON.stringify({ error: error.message }), {
+    if (msg === 'INVALID_SHARE_TOKEN') {
+      return new Response(JSON.stringify({ error: "Invalid share token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (msg === 'SHARE_TOKEN_EXPIRED') {
+      return new Response(JSON.stringify({ error: "Share token expired" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (msg === 'INVALID_TOKEN') {
+      return new Response(JSON.stringify({ error: "Invalid token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ error: msg }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
