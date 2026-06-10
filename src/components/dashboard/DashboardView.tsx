@@ -5474,15 +5474,26 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                   </div>
                 )}
 
+                {youtubeAnalyticsQuery.data?.youtubeApiNotEnabled && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>YouTube API não habilitada</AlertTitle>
+                    <AlertDescription className="space-y-2">
+                      <p>A YouTube Data API v3 e/ou YouTube Analytics API não estão habilitadas no projeto do Google Cloud Console.</p>
+                      <p className="text-xs">Acesse console.cloud.google.com → APIs e serviços → Biblioteca → habilite "YouTube Data API v3" e "YouTube Analytics API".</p>
+                    </AlertDescription>
+                  </Alert>
+                )}
+
                 {youtubeAnalyticsQuery.data?.requiresYoutubeScope && (
                   <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
                     <div className="rounded-full bg-red-100 p-4 dark:bg-red-900/20">
                       <Youtube className="h-10 w-10 text-red-600" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-semibold">Conecte o YouTube Analytics</h3>
+                      <h3 className="text-lg font-semibold">Autorize o YouTube Analytics</h3>
                       <p className="mt-1 text-sm text-muted-foreground max-w-sm mx-auto">
-                        Para ver as estatísticas do canal, reconecte sua conta Google concedendo acesso ao YouTube Analytics.
+                        Clique em reconectar para autorizar o acesso ao YouTube Analytics. Você voltará para esta página automaticamente.
                       </p>
                     </div>
                     <Button

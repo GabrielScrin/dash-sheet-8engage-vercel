@@ -26,6 +26,17 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
   return data.access_token;
 }
 
+function classifyGoogleError(status: number, body: string): Error {
+  if (status === 401) return new Error('YOUTUBE_SCOPE_REQUIRED');
+  if (status === 403) {
+    if (body.includes('accessNotConfigured') || body.includes('has not been used in project') || body.includes('disabled')) {
+      return new Error('YOUTUBE_API_NOT_ENABLED');
+    }
+    return new Error('YOUTUBE_SCOPE_REQUIRED');
+  }
+  return new Error(`API error ${status}: ${body}`);
+}
+
 async function getChannelStats(accessToken: string) {
   const res = await fetch(
     'https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&mine=true',
@@ -33,8 +44,8 @@ async function getChannelStats(accessToken: string) {
   );
   if (!res.ok) {
     const body = await res.text();
-    if (res.status === 403 || res.status === 401) throw new Error('YOUTUBE_SCOPE_REQUIRED');
-    throw new Error(`YouTube Data API error: ${body}`);
+    console.error('getChannelStats error', res.status, body);
+    throw classifyGoogleError(res.status, body);
   }
   return res.json();
 }
@@ -57,8 +68,8 @@ async function getAnalytics28Days(accessToken: string) {
   );
   if (!res.ok) {
     const body = await res.text();
-    if (res.status === 403 || res.status === 401) throw new Error('YOUTUBE_SCOPE_REQUIRED');
-    throw new Error(`YouTube Analytics API error: ${body}`);
+    console.error('getAnalytics28Days error', res.status, body);
+    throw classifyGoogleError(res.status, body);
   }
   return res.json();
 }
@@ -233,6 +244,12 @@ serve(async (req) => {
     });
   } catch (error: any) {
     const msg: string = error.message || '';
+    if (msg.includes('YOUTUBE_API_NOT_ENABLED')) {
+      return new Response(JSON.stringify({ youtubeApiNotEnabled: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     if (msg.includes('YOUTUBE_SCOPE_REQUIRED') || msg.includes('GOOGLE_RECONNECT_REQUIRED')) {
       // Retorna 200 para que o supabase-js coloque no `data`, não no `error`
       return new Response(JSON.stringify({ requiresYoutubeScope: true }), {
