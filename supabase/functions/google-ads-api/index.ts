@@ -1434,6 +1434,37 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (action === "get-linked-youtube-channel") {
+      const customerId = normalizeCustomerId(typedConnection.customer_id);
+      if (!customerId) throw new Error("customer_id não configurado na conexão Google Ads");
+
+      // Busca videos usados nas campanhas e extrai o channelId do YouTube
+      const query = "SELECT video.channel_id, video.id FROM video WHERE video.channel_id != '' LIMIT 20";
+      type VideoResult = Array<{ results?: Array<{ video?: { channelId?: string; id?: string } }> }>;
+      const response = await googleAdsRequest<VideoResult>(
+        accessToken,
+        typedConnection,
+        `/customers/${customerId}/googleAds:searchStream`,
+        { method: "POST", body: JSON.stringify({ query }) },
+      );
+
+      const channelCounts = new Map<string, number>();
+      for (const batch of response) {
+        for (const row of (batch.results || [])) {
+          const ch = row.video?.channelId;
+          if (ch) channelCounts.set(ch, (channelCounts.get(ch) || 0) + 1);
+        }
+      }
+
+      // Retorna o canal com mais vídeos (mais provável de ser o canal principal do anunciante)
+      const sorted = Array.from(channelCounts.entries()).sort((a, b) => b[1] - a[1]);
+      const channelId = sorted[0]?.[0] || null;
+
+      return new Response(JSON.stringify({ channelId, allChannelIds: sorted.map(([id]) => id) }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     throw new Error(`Unknown action: ${action}`);
   } catch (error: any) {
     return new Response(JSON.stringify({ error: error.message || "Unexpected error" }), {

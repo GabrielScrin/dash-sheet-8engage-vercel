@@ -920,9 +920,31 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     enabled: project?.source_type === 'meta_ads' && !!projectId,
   });
 
+  const isYoutubeTabEnabled = project?.source_type === 'sheet' && sheetDashboardSource === 'google' && !!projectId;
+  const googleAdsCustomerId = (sourceConfig as any)?.google_ads_customer_id;
+
+  // Busca o canal YouTube vinculado à conta Google Ads do projeto
+  const youtubeChannelIdQuery = useQuery({
+    queryKey: ['youtube-channel-id', projectId, shareToken],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const invokeHeaders: Record<string, string> = {};
+      if (shareToken) invokeHeaders['x-share-token'] = shareToken;
+      const { data } = await supabase.functions.invoke('google-ads-api', {
+        headers: invokeHeaders,
+        body: { action: 'get-linked-youtube-channel', projectId },
+      });
+      return (data?.channelId as string | null) ?? null;
+    },
+    enabled: isYoutubeTabEnabled && !!googleAdsCustomerId,
+    staleTime: 30 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+    retry: false,
+  });
+
   // YouTube Analytics Query
   const youtubeAnalyticsQuery = useQuery({
-    queryKey: ['youtube-analytics', projectId, shareToken],
+    queryKey: ['youtube-analytics', projectId, shareToken, youtubeChannelIdQuery.data],
     queryFn: async () => {
       const { data: sessionData } = await supabase.auth.getSession();
       const providerToken = sessionData.session?.provider_token;
@@ -930,17 +952,21 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       if (providerToken) invokeHeaders['x-google-token'] = providerToken;
       if (shareToken) invokeHeaders['x-share-token'] = shareToken;
 
+      const body: Record<string, string> = {};
+      if (youtubeChannelIdQuery.data) body['youtubeChannelId'] = youtubeChannelIdQuery.data;
+
       const { data, error } = await supabase.functions.invoke('youtube-analytics', {
         headers: invokeHeaders,
+        body: Object.keys(body).length > 0 ? body : undefined,
       });
 
       if (error) throw error;
       if (data?.code === 'YOUTUBE_SCOPE_REQUIRED') return { requiresYoutubeScope: true };
-      // eslint-disable-next-line no-console
-      console.log('[YouTube Debug] raw response:', JSON.stringify(data, null, 2));
       return data;
     },
-    enabled: project?.source_type === 'sheet' && sheetDashboardSource === 'google' && !!projectId,
+    enabled: isYoutubeTabEnabled && (
+      !googleAdsCustomerId || youtubeChannelIdQuery.isFetched
+    ),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     retry: false,
