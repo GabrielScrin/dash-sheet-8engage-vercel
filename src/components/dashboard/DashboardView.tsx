@@ -936,6 +936,8 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
 
       if (error) throw error;
       if (data?.code === 'YOUTUBE_SCOPE_REQUIRED') return { requiresYoutubeScope: true };
+      // eslint-disable-next-line no-console
+      console.log('[YouTube Debug] raw response:', JSON.stringify(data, null, 2));
       return data;
     },
     enabled: project?.source_type === 'sheet' && sheetDashboardSource === 'google' && !!projectId,

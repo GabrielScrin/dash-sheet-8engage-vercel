@@ -50,13 +50,14 @@ async function getChannelStats(accessToken: string) {
   return res.json();
 }
 
-async function getAnalytics28Days(accessToken: string) {
+async function getAnalytics28Days(accessToken: string, channelId?: string) {
   const today = new Date();
   const endDate = today.toISOString().split('T')[0];
   const startDate = new Date(today.getTime() - 28 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
+  const ids = channelId ? `channel==${channelId}` : 'channel==mine';
   const params = new URLSearchParams({
-    ids: 'channel==mine',
+    ids,
     startDate,
     endDate,
     metrics: 'views,estimatedMinutesWatched,subscribersGained,subscribersLost',
@@ -74,13 +75,14 @@ async function getAnalytics28Days(accessToken: string) {
   return res.json();
 }
 
-async function getTopVideos(accessToken: string, days = 7) {
+async function getTopVideos(accessToken: string, days = 7, channelId?: string) {
   const today = new Date();
   const endDate = today.toISOString().split('T')[0];
   const startDate = new Date(today.getTime() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
+  const ids = channelId ? `channel==${channelId}` : 'channel==mine';
   const params = new URLSearchParams({
-    ids: 'channel==mine',
+    ids,
     startDate,
     endDate,
     metrics: 'views',
@@ -196,19 +198,22 @@ serve(async (req) => {
 
     let channelData: any, analytics28: any, topVideos: any;
     try {
-      [channelData, analytics28, topVideos] = await Promise.all([
-        getChannelStats(accessToken),
-        getAnalytics28Days(accessToken),
-        getTopVideos(accessToken, 7),
+      // Busca channel stats primeiro para obter o channelId real
+      channelData = await getChannelStats(accessToken);
+      const channelId: string | undefined = channelData.items?.[0]?.id;
+      [analytics28, topVideos] = await Promise.all([
+        getAnalytics28Days(accessToken, channelId),
+        getTopVideos(accessToken, 7, channelId),
       ]);
     } catch (e: any) {
       if (e.message?.includes("YOUTUBE_SCOPE_REQUIRED") && googleToken) {
         // Token da sessão não tem escopo YouTube — tenta via refresh token do banco
         accessToken = await resolveAccessToken(req, authHeader, googleToken, shareToken);
-        [channelData, analytics28, topVideos] = await Promise.all([
-          getChannelStats(accessToken),
-          getAnalytics28Days(accessToken),
-          getTopVideos(accessToken, 7),
+        channelData = await getChannelStats(accessToken);
+        const channelId: string | undefined = channelData.items?.[0]?.id;
+        [analytics28, topVideos] = await Promise.all([
+          getAnalytics28Days(accessToken, channelId),
+          getTopVideos(accessToken, 7, channelId),
         ]);
       } else {
         throw e;
@@ -251,6 +256,12 @@ serve(async (req) => {
         netSubscribers: (analyticsRow[2] || 0) - (analyticsRow[3] || 0),
       },
       topVideos,
+      _debug: {
+        rawStats: stats,
+        rawAnalyticsRows: analytics28.rows,
+        rawAnalyticsColumnHeaders: analytics28.columnHeaders,
+        channelItemsCount: channelData.items?.length ?? 0,
+      },
     };
 
     return new Response(JSON.stringify(result), {
