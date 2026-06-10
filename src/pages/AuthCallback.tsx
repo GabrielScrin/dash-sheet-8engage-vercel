@@ -2,12 +2,52 @@ import { useEffect, useState } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
 
 const SUPABASE_STORAGE_KEY = 'sb-hzstynttwwjlhvywemml-auth-token';
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || '').replace(/^﻿/, '').trim();
+const SUPABASE_KEY = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '').replace(/^﻿/, '').trim();
+const GOOGLE_SCOPE = [
+  'https://www.googleapis.com/auth/spreadsheets.readonly',
+  'https://www.googleapis.com/auth/drive.metadata.readonly',
+  'https://www.googleapis.com/auth/yt-analytics.readonly',
+  'https://www.googleapis.com/auth/youtube.readonly',
+].join(' ');
 
 function parseJwtPayload(token: string) {
   const [, payload] = token.split('.');
   const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
   const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
   return JSON.parse(atob(padded));
+}
+
+async function saveProviderTokens(userId: string, accessToken: string, providerToken: string | null, providerRefreshToken: string) {
+  try {
+    // Deleta registro anterior
+    await fetch(`${SUPABASE_URL}/rest/v1/service_tokens?user_id=eq.${userId}&provider=eq.google`, {
+      method: 'DELETE',
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    // Insere novo com escopos atualizados
+    await fetch(`${SUPABASE_URL}/rest/v1/service_tokens`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        provider: 'google',
+        access_token: providerToken ?? '',
+        refresh_token: providerRefreshToken,
+        token_type: 'Bearer',
+        scope: GOOGLE_SCOPE,
+      }),
+    });
+  } catch (err) {
+    console.error('Falha ao salvar provider tokens:', err);
+  }
 }
 
 export default function AuthCallback() {
@@ -31,59 +71,67 @@ export default function AuthCallback() {
     const refreshToken = hashParams.get('refresh_token');
 
     if (accessToken && refreshToken) {
-      try {
-        const payload = parseJwtPayload(accessToken);
-        const expiresAt = Number(hashParams.get('expires_at') || payload.exp || 0);
-        const expiresIn = Number(hashParams.get('expires_in') || Math.max(expiresAt - Math.floor(Date.now() / 1000), 0));
-        const providerToken = hashParams.get('provider_token');
-        const providerRefreshToken = hashParams.get('provider_refresh_token');
-        const tokenType = hashParams.get('token_type') || 'bearer';
-        const nowIso = new Date().toISOString();
+      (async () => {
+        try {
+          const payload = parseJwtPayload(accessToken);
+          const expiresAt = Number(hashParams.get('expires_at') || payload.exp || 0);
+          const expiresIn = Number(hashParams.get('expires_in') || Math.max(expiresAt - Math.floor(Date.now() / 1000), 0));
+          const providerToken = hashParams.get('provider_token');
+          const providerRefreshToken = hashParams.get('provider_refresh_token');
+          const tokenType = hashParams.get('token_type') || 'bearer';
+          const nowIso = new Date().toISOString();
 
-        const user = {
-          id: payload.sub,
-          aud: payload.aud,
-          role: payload.role,
-          email: payload.email,
-          phone: payload.phone || '',
-          app_metadata: payload.app_metadata || {},
-          user_metadata: payload.user_metadata || {},
-          identities: [],
-          factors: null,
-          created_at: nowIso,
-          updated_at: nowIso,
-          is_anonymous: payload.is_anonymous || false,
-        };
+          const user = {
+            id: payload.sub,
+            aud: payload.aud,
+            role: payload.role,
+            email: payload.email,
+            phone: payload.phone || '',
+            app_metadata: payload.app_metadata || {},
+            user_metadata: payload.user_metadata || {},
+            identities: [],
+            factors: null,
+            created_at: nowIso,
+            updated_at: nowIso,
+            is_anonymous: payload.is_anonymous || false,
+          };
 
-        const session = {
-          access_token: accessToken,
-          refresh_token: refreshToken,
-          expires_at: expiresAt,
-          expires_in: expiresIn,
-          token_type: tokenType,
-          provider_token: providerToken,
-          provider_refresh_token: providerRefreshToken,
-          user,
-        };
+          const session = {
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            expires_at: expiresAt,
+            expires_in: expiresIn,
+            token_type: tokenType,
+            provider_token: providerToken,
+            provider_refresh_token: providerRefreshToken,
+            user,
+          };
 
-        const serializedSession = JSON.stringify(session);
-        window.localStorage.setItem(SUPABASE_STORAGE_KEY, serializedSession);
+          const serializedSession = JSON.stringify(session);
+          window.localStorage.setItem(SUPABASE_STORAGE_KEY, serializedSession);
 
-        if (window.localStorage.getItem(SUPABASE_STORAGE_KEY) !== serializedSession) {
-          throw new Error('O navegador recusou gravar a sessao no localStorage.');
+          if (window.localStorage.getItem(SUPABASE_STORAGE_KEY) !== serializedSession) {
+            throw new Error('O navegador recusou gravar a sessao no localStorage.');
+          }
+
+          // Salva o provider_refresh_token no banco via REST direto
+          // (o onAuthStateChange não dispara nessa rota manual, então fazemos aqui)
+          if (providerRefreshToken) {
+            await saveProviderTokens(payload.sub, accessToken, providerToken, providerRefreshToken);
+          }
+
+          window.history.replaceState({}, document.title, '/auth/callback');
+          const returnTo = window.localStorage.getItem('auth_return_to');
+          window.localStorage.removeItem('auth_return_to');
+          window.location.assign(returnTo || '/app/projects');
+        } catch (manualSessionError) {
+          setError(
+            manualSessionError instanceof Error
+              ? manualSessionError.message
+              : 'Falha ao persistir a sessao manualmente.'
+          );
         }
-
-        window.history.replaceState({}, document.title, '/auth/callback');
-        const returnTo = window.localStorage.getItem('auth_return_to');
-        window.localStorage.removeItem('auth_return_to');
-        window.location.assign(returnTo || '/app/projects');
-      } catch (manualSessionError) {
-        setError(
-          manualSessionError instanceof Error
-            ? manualSessionError.message
-            : 'Falha ao persistir a sessao manualmente.'
-        );
-      }
+      })();
       return;
     }
 
