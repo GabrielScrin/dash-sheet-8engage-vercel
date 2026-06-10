@@ -74,7 +74,9 @@ export default function AuthCallback() {
         }
 
         window.history.replaceState({}, document.title, '/auth/callback');
-        window.location.assign('/app/projects');
+        const returnTo = window.localStorage.getItem('auth_return_to');
+        window.localStorage.removeItem('auth_return_to');
+        window.location.assign(returnTo || '/app/projects');
       } catch (manualSessionError) {
         setError(
           manualSessionError instanceof Error

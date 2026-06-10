@@ -4304,10 +4304,10 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
   const handleReconnectGoogle = async () => {
     setIsReconnecting(true);
     try {
+      window.localStorage.setItem('auth_return_to', window.location.href);
       await signInWithGoogle();
     } catch (err) {
       console.error('Reconnect failed:', err);
-    } finally {
       setIsReconnecting(false);
     }
   };
@@ -5485,7 +5485,14 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                         Para ver as estatísticas do canal, reconecte sua conta Google concedendo acesso ao YouTube Analytics.
                       </p>
                     </div>
-                    <Button onClick={() => signInWithGoogle()} variant="outline" className="gap-2">
+                    <Button
+                      onClick={() => {
+                        window.localStorage.setItem('auth_return_to', window.location.href);
+                        signInWithGoogle();
+                      }}
+                      variant="outline"
+                      className="gap-2"
+                    >
                       <RefreshCw className="h-4 w-4" />
                       Reconectar com YouTube
                     </Button>
