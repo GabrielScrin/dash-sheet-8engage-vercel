@@ -217,6 +217,18 @@ serve(async (req) => {
 
     const channel = channelData.items?.[0];
     const stats = channel?.statistics || {};
+
+    // Log para diagnóstico — visível nos logs da Edge Function no Supabase
+    console.log('=== YouTube Debug ===');
+    console.log('channelItems count:', channelData.items?.length ?? 0);
+    console.log('channel id:', channel?.id);
+    console.log('channel title:', channel?.snippet?.title);
+    console.log('statistics raw:', JSON.stringify(stats));
+    console.log('hiddenSubscriberCount:', stats.hiddenSubscriberCount);
+    console.log('analytics28 raw:', JSON.stringify(analytics28));
+    console.log('analytics28 columnHeaders:', JSON.stringify(analytics28.columnHeaders));
+    console.log('analytics28 rows:', JSON.stringify(analytics28.rows));
+
     const analyticsRow: number[] = analytics28.rows?.[0] || [0, 0, 0, 0];
 
     const result = {
@@ -224,9 +236,11 @@ serve(async (req) => {
         id: channel?.id,
         title: channel?.snippet?.title,
         thumbnailUrl: channel?.snippet?.thumbnails?.default?.url,
-        subscribers: Number(stats.subscriberCount || 0),
-        totalViews: Number(stats.viewCount || 0),
-        videoCount: Number(stats.videoCount || 0),
+        // subscriberCount é string na API; undefined se hiddenSubscriberCount=true
+        subscribers: stats.hiddenSubscriberCount ? null : Number(stats.subscriberCount ?? 0),
+        totalViews: Number(stats.viewCount ?? 0),
+        videoCount: Number(stats.videoCount ?? 0),
+        hiddenSubscriberCount: Boolean(stats.hiddenSubscriberCount),
       },
       period28Days: {
         views: analyticsRow[0] || 0,

@@ -5520,7 +5520,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                   </Alert>
                 )}
 
-                {youtubeAnalyticsQuery.data && !youtubeAnalyticsQuery.data.requiresYoutubeScope && !youtubeAnalyticsQuery.isError && (() => {
+                {youtubeAnalyticsQuery.data && !youtubeAnalyticsQuery.data.requiresYoutubeScope && !youtubeAnalyticsQuery.data.youtubeApiNotEnabled && !youtubeAnalyticsQuery.isError && (() => {
                   const ytData = youtubeAnalyticsQuery.data;
                   const channel = ytData.channel || {};
                   const p28 = ytData.period28Days || {};
@@ -5537,8 +5537,15 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                         </div>
                         <p className="text-xs text-muted-foreground mb-1">Inscritos atuais</p>
                         <span className="text-4xl font-bold tracking-tight">
-                          {new Intl.NumberFormat('pt-BR').format(channel.subscribers || 0)}
+                          {channel.hiddenSubscriberCount
+                            ? '—'
+                            : channel.subscribers === null
+                              ? '—'
+                              : new Intl.NumberFormat('pt-BR').format(channel.subscribers ?? 0)}
                         </span>
+                        {channel.hiddenSubscriberCount && (
+                          <p className="text-xs text-muted-foreground mt-1">Contagem oculta nas configurações do canal</p>
+                        )}
                         {(p28.netSubscribers || 0) !== 0 && (
                           <div className="mt-3 flex items-center gap-1.5">
                             <TrendingUp className={`h-4 w-4 ${p28.netSubscribers > 0 ? 'text-emerald-600' : 'text-red-500'}`} />
