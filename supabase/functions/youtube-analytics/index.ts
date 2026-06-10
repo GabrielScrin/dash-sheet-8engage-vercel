@@ -37,9 +37,12 @@ function classifyGoogleError(status: number, body: string): Error {
   return new Error(`API error ${status}: ${body}`);
 }
 
-async function getChannelStats(accessToken: string) {
+async function getChannelStats(accessToken: string, channelId?: string) {
+  const params = channelId
+    ? `part=statistics,snippet&id=${channelId}`
+    : 'part=statistics,snippet&mine=true';
   const res = await fetch(
-    'https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&mine=true',
+    `https://www.googleapis.com/youtube/v3/channels?${params}`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
   if (!res.ok) {
@@ -194,12 +197,21 @@ serve(async (req) => {
     const shareToken = req.headers.get("x-share-token");
     let accessToken: string;
 
+    // Lê youtubeChannelId do body se enviado pelo frontend
+    let requestedChannelId: string | undefined;
+    try {
+      const bodyText = await req.text();
+      if (bodyText) {
+        const parsed = JSON.parse(bodyText);
+        requestedChannelId = parsed?.youtubeChannelId || undefined;
+      }
+    } catch { /* body vazio ou não-JSON é ok */ }
+
     accessToken = googleToken ?? await resolveAccessToken(req, authHeader, googleToken, shareToken);
 
     let channelData: any, analytics28: any, topVideos: any;
     try {
-      // Busca channel stats primeiro para obter o channelId real
-      channelData = await getChannelStats(accessToken);
+      channelData = await getChannelStats(accessToken, requestedChannelId);
       const channelId: string | undefined = channelData.items?.[0]?.id;
       [analytics28, topVideos] = await Promise.all([
         getAnalytics28Days(accessToken, channelId),
@@ -209,7 +221,7 @@ serve(async (req) => {
       if (e.message?.includes("YOUTUBE_SCOPE_REQUIRED") && googleToken) {
         // Token da sessão não tem escopo YouTube — tenta via refresh token do banco
         accessToken = await resolveAccessToken(req, authHeader, googleToken, shareToken);
-        channelData = await getChannelStats(accessToken);
+        channelData = await getChannelStats(accessToken, requestedChannelId);
         const channelId: string | undefined = channelData.items?.[0]?.id;
         [analytics28, topVideos] = await Promise.all([
           getAnalytics28Days(accessToken, channelId),
