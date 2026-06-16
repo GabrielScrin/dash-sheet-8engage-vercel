@@ -77,7 +77,7 @@ export function BigNumberCard({
           <TooltipTrigger asChild>
             <Card className="dashboard-card-hover cursor-default">
               <CardContent className="p-4">
-                <p className="text-sm font-medium text-muted-foreground truncate">{label}</p>
+                <p className="text-sm font-medium leading-snug text-muted-foreground break-words">{label}</p>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="text-2xl font-bold tracking-tight" aria-live="polite">
                     <CountUp

@@ -4141,8 +4141,8 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       { key: 'uniqueUsers', label: 'Usuarios exclusivos', format: 'number' },
       { key: 'impressions', label: 'Impressoes', format: 'number' },
       { key: 'averageFrequency', label: 'Freq. media impr. / usuario', format: 'decimal' },
-      { key: 'averageCpv', label: 'CPV medio do TrueView', format: 'currency' },
-      { key: 'videoViews', label: 'Visualizacao do TrueView', format: 'number' },
+      { key: 'averageCpv', label: 'CPV TrueView', format: 'currency' },
+      { key: 'videoViews', label: 'Views TrueView', format: 'number' },
     ];
 
     if (activeTab === 'descoberta') {
@@ -4222,12 +4222,12 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
 
     return [
       ...baseCards,
-      { label: 'Visualizacao do TrueView', value: totals.videoViews, format: 'number' as const },
-      { label: 'CPV medio do TrueView', value: totals.videoViews > 0 ? totals.spend / totals.videoViews : 0, format: 'currency' as const },
-      { label: 'Video assistido ate 25%', value: totals.videoQuartile25, format: 'number' as const },
-      { label: 'Video assistido ate 50%', value: totals.videoQuartile50, format: 'number' as const },
-      { label: 'Video assistido ate 75%', value: totals.videoQuartile75, format: 'number' as const },
-      { label: 'Video assistido ate 100%', value: totals.videoQuartile100, format: 'number' as const },
+      { label: 'Views TrueView', value: totals.videoViews, format: 'number' as const },
+      { label: 'CPV TrueView', value: totals.videoViews > 0 ? totals.spend / totals.videoViews : 0, format: 'currency' as const },
+      { label: 'Views 25%', value: totals.videoQuartile25, format: 'number' as const },
+      { label: 'Views 50%', value: totals.videoQuartile50, format: 'number' as const },
+      { label: 'Views 75%', value: totals.videoQuartile75, format: 'number' as const },
+      { label: 'Views 100%', value: totals.videoQuartile100, format: 'number' as const },
     ];
   }, [activeTab, googleAdsConnectedCampaigns, isGoogleSheetView]);
 
@@ -4288,12 +4288,12 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
               ]
             : [
                 { label: 'Custo', value: totals.spend, format: 'currency' as const },
-                { label: 'Visualizacao do TrueView', value: totals.videoViews, format: 'number' as const },
-                { label: 'CPV medio do TrueView', value: totals.videoViews > 0 ? totals.spend / totals.videoViews : 0, format: 'currency' as const },
-                { label: 'Video assistido ate 25%', value: totals.videoQuartile25, format: 'number' as const },
-                { label: 'Video assistido ate 50%', value: totals.videoQuartile50, format: 'number' as const },
-                { label: 'Video assistido ate 75%', value: totals.videoQuartile75, format: 'number' as const },
-                { label: 'Video assistido ate 100%', value: totals.videoQuartile100, format: 'number' as const },
+                { label: 'Views TrueView', value: totals.videoViews, format: 'number' as const },
+                { label: 'CPV TrueView', value: totals.videoViews > 0 ? totals.spend / totals.videoViews : 0, format: 'currency' as const },
+                { label: 'Views 25%', value: totals.videoQuartile25, format: 'number' as const },
+                { label: 'Views 50%', value: totals.videoQuartile50, format: 'number' as const },
+                { label: 'Views 75%', value: totals.videoQuartile75, format: 'number' as const },
+                { label: 'Views 100%', value: totals.videoQuartile100, format: 'number' as const },
               ];
 
         return {
@@ -4516,7 +4516,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                       <h4 className="text-base font-semibold">{group.typeLabel}</h4>
                       <Badge variant="secondary">{group.campaigns.length} campanhas</Badge>
                     </div>
-                    <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                       {group.summaryCards.map((card, index) => (
                         <BigNumberCard
                           key={`${group.typeKey}-${card.label}`}
