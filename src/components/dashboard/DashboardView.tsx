@@ -535,7 +535,19 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     const headers: Record<string, string> = {};
     if (shareToken) headers['x-share-token'] = shareToken;
     const { data, error } = await supabase.functions.invoke(path, { body, headers });
-    if (error) throw error;
+    if (error) {
+      const context = (error as any)?.context;
+      if (context && typeof context.json === 'function') {
+        let errorBody: any = null;
+        try {
+          errorBody = await context.json();
+        } catch {
+          errorBody = null;
+        }
+        if (errorBody?.error) throw new Error(errorBody.error);
+      }
+      throw error;
+    }
     return data;
   };
   const invokeMeta = async (path: string, body?: Record<string, unknown>) => invokeEdge(path, body);
@@ -884,9 +896,14 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
         return {
           totals: (data?.totals ?? null) as { spend: number; impressions: number; conversions: number } | null,
           campaigns: Array.isArray(data?.campaigns) ? (data.campaigns as GoogleAdsCampaignMetricRow[]) : [],
+          errorMessage: null as string | null,
         };
-      } catch {
-        return { totals: null, campaigns: [] as GoogleAdsCampaignMetricRow[] };
+      } catch (error: any) {
+        return {
+          totals: null,
+          campaigns: [] as GoogleAdsCampaignMetricRow[],
+          errorMessage: error?.message || 'Erro ao buscar dados do Google Ads.',
+        };
       }
     },
     enabled: !!projectId && project?.source_type === 'sheet' && sheetDashboardSource === 'google',
@@ -4459,6 +4476,10 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
         {googleAdsCampaignOverviewQuery.isLoading ? (
           <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
             Carregando campanhas da conexao Google Ads...
+          </div>
+        ) : googleAdsCampaignOverviewQuery.data?.errorMessage ? (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-6 text-sm text-destructive">
+            {googleAdsCampaignOverviewQuery.data.errorMessage}
           </div>
         ) : googleAdsConnectedCampaigns.length === 0 ? (
           <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">

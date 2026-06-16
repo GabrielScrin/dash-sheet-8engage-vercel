@@ -202,10 +202,18 @@ async function googleAdsRequest<T>(
 
   const data = await response.json();
   if (!response.ok) {
+    const googleAdsError = data?.error?.details?.[0]?.errors?.[0];
     const message =
       data?.error?.message ||
-      data?.error?.details?.[0]?.errors?.[0]?.message ||
+      googleAdsError?.message ||
+      (googleAdsError?.errorCode ? JSON.stringify(googleAdsError.errorCode) : "") ||
       "Erro na API do Google Ads";
+    console.error("Google Ads API request failed", {
+      path,
+      status: response.status,
+      message,
+      error: data?.error,
+    });
     throw new Error(message);
   }
 
@@ -624,6 +632,14 @@ Deno.serve(async (req) => {
         "AND campaign.status != 'REMOVED'",
       ].join(" ");
 
+      const basicCampaignsQuery = [
+        "SELECT campaign.id, campaign.name, campaign.advertising_channel_type,",
+        "metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions",
+        "FROM campaign",
+        `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+        "AND campaign.status != 'REMOVED'",
+      ].join(" ");
+
       const adsQuery = [
         "SELECT campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type, ad_group_ad.ad.final_urls,",
         "metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions",
@@ -833,16 +849,39 @@ Deno.serve(async (req) => {
         }>;
       }>;
 
-      const [tsRes, campRes] = await Promise.all([
-        googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
+      const tsRes = await googleAdsRequest<BatchResult>(
+        accessToken,
+        typedConnection,
+        `/customers/${customerId}/googleAds:searchStream`,
+        {
           method: "POST",
           body: JSON.stringify({ query: timeseriesQuery }),
-        }),
-        googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, {
-          method: "POST",
-          body: JSON.stringify({ query: campaignsQuery }),
-        }),
-      ]);
+        },
+      );
+
+      let campRes: BatchResult = [];
+      try {
+        campRes = await googleAdsRequest<BatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          {
+            method: "POST",
+            body: JSON.stringify({ query: campaignsQuery }),
+          },
+        );
+      } catch (error) {
+        console.error("Google Ads rich campaigns query failed, retrying basic query", error);
+        campRes = await googleAdsRequest<BatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          {
+            method: "POST",
+            body: JSON.stringify({ query: basicCampaignsQuery }),
+          },
+        );
+      }
 
       let adsRes: AdsBatchResult = [];
       try {
