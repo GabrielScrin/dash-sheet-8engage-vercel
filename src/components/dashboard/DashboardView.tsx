@@ -961,7 +961,14 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
 
   // YouTube Analytics Query
   const youtubeAnalyticsQuery = useQuery({
-    queryKey: ['youtube-analytics', projectId, shareToken, youtubeChannelIdQuery.data],
+    queryKey: [
+      'youtube-analytics',
+      projectId,
+      shareToken,
+      youtubeChannelIdQuery.data,
+      dateRange?.from ? dateRange.from.toISOString() : null,
+      dateRange?.to ? dateRange.to.toISOString() : null,
+    ],
     queryFn: async () => {
       const { data: sessionData } = await supabase.auth.getSession();
       const providerToken = sessionData.session?.provider_token;
@@ -971,17 +978,19 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
 
       const body: Record<string, string> = {};
       if (youtubeChannelIdQuery.data) body['youtubeChannelId'] = youtubeChannelIdQuery.data;
+      body['startDate'] = dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : format(subDays(new Date(), 28), 'yyyy-MM-dd');
+      body['endDate'] = format(dateRange?.to || new Date(), 'yyyy-MM-dd');
 
       const { data, error } = await supabase.functions.invoke('youtube-analytics', {
         headers: invokeHeaders,
-        body: Object.keys(body).length > 0 ? body : undefined,
+        body,
       });
 
       if (error) throw error;
       if (data?.code === 'YOUTUBE_SCOPE_REQUIRED') return { requiresYoutubeScope: true };
       return data;
     },
-    enabled: isYoutubeTabEnabled && (
+    enabled: isYoutubeTabEnabled && !!dateRange?.from && !!dateRange?.to && (
       !googleAdsCustomerId || youtubeChannelIdQuery.isFetched
     ),
     staleTime: 5 * 60 * 1000,
@@ -5574,6 +5583,10 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                   const channel = ytData.channel || {};
                   const p28 = ytData.period28Days || {};
                   const topVideos: any[] = ytData.topVideos?.videos || [];
+                  const youtubePeriodLabel =
+                    dateRange?.from && dateRange?.to
+                      ? `${format(dateRange.from, 'd MMM', { locale: ptBR })} - ${format(dateRange.to, 'd MMM yyyy', { locale: ptBR })}`
+                      : 'Periodo selecionado';
                   return (
                     <>
                       {/* Hero inscritos */}
@@ -5605,22 +5618,29 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                         )}
                       </div>
 
-                      {/* Resumo 28 dias */}
+                      {/* Resumo do periodo selecionado */}
                       <section>
-                        <h3 className="text-sm font-medium text-muted-foreground mb-3">Resumo · Últimos 28 dias</h3>
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                          <h3 className="text-sm font-medium text-muted-foreground">Resumo · {youtubePeriodLabel}</h3>
+                          {ytData.analyticsScopeMissing && (
+                            <span className="text-xs text-muted-foreground">
+                              Analytics do canal nao autorizado para este usuario
+                            </span>
+                          )}
+                        </div>
                         <div className="grid gap-4 sm:grid-cols-2">
                           <BigNumberCard
                             label="Visualizações"
                             value={p28.views || 0}
                             format="number"
-                            subtitle="Últimos 28 dias"
+                            subtitle={youtubePeriodLabel}
                             delay={0.1}
                           />
                           <BigNumberCard
                             label="Tempo de Exibição (horas)"
                             value={p28.watchTimeHours || 0}
                             format="number"
-                            subtitle="Últimos 28 dias"
+                            subtitle={youtubePeriodLabel}
                             delay={0.2}
                           />
                         </div>
