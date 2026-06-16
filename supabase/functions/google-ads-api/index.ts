@@ -662,6 +662,15 @@ Deno.serve(async (req) => {
         "AND campaign.status != 'REMOVED'",
       ].join(" ");
 
+      const activeViewCampaignsQuery = [
+        "SELECT campaign.id, campaign.name, campaign.advertising_channel_type,",
+        "metrics.active_view_audible_quartile_p25_rate, metrics.active_view_audible_quartile_p50_rate,",
+        "metrics.active_view_audible_quartile_p75_rate, metrics.active_view_audible_quartile_p100_rate",
+        "FROM campaign",
+        `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+        "AND campaign.status != 'REMOVED'",
+      ].join(" ");
+
       const adsQuery = [
         "SELECT campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type, ad_group_ad.ad.final_urls,",
         "metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions",
@@ -719,6 +728,16 @@ Deno.serve(async (req) => {
         "AND ad_group_ad.status != 'REMOVED'",
       ].join(" ");
 
+      const adActiveViewMetricsQuery = [
+        "SELECT campaign.id, campaign.name, ad_group_ad.ad.id,",
+        "metrics.active_view_audible_quartile_p25_rate, metrics.active_view_audible_quartile_p50_rate,",
+        "metrics.active_view_audible_quartile_p75_rate, metrics.active_view_audible_quartile_p100_rate",
+        "FROM ad_group_ad",
+        `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+        "AND campaign.status != 'REMOVED'",
+        "AND ad_group_ad.status != 'REMOVED'",
+      ].join(" ");
+
       const videoAdsQuery = [
         "SELECT campaign.id, campaign.name, video.id, video.title,",
         "metrics.cost_micros, metrics.impressions, metrics.trueview_average_cpv, metrics.video_trueview_views,",
@@ -762,6 +781,10 @@ Deno.serve(async (req) => {
             videoQuartileP50Rate?: number;
             videoQuartileP75Rate?: number;
             videoQuartileP100Rate?: number;
+            activeViewAudibleQuartileP25Rate?: number;
+            activeViewAudibleQuartileP50Rate?: number;
+            activeViewAudibleQuartileP75Rate?: number;
+            activeViewAudibleQuartileP100Rate?: number;
           };
         }>;
       }>;
@@ -818,6 +841,10 @@ Deno.serve(async (req) => {
             videoQuartileP50Rate?: number;
             videoQuartileP75Rate?: number;
             videoQuartileP100Rate?: number;
+            activeViewAudibleQuartileP25Rate?: number;
+            activeViewAudibleQuartileP50Rate?: number;
+            activeViewAudibleQuartileP75Rate?: number;
+            activeViewAudibleQuartileP100Rate?: number;
           };
         }>;
       }>;
@@ -967,6 +994,19 @@ Deno.serve(async (req) => {
       } catch (error) {
         console.error("Google Ads video campaigns query failed", error);
       }
+      try {
+        optionalCampRes.push(await googleAdsRequest<BatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          {
+            method: "POST",
+            body: JSON.stringify({ query: activeViewCampaignsQuery }),
+          },
+        ));
+      } catch (error) {
+        console.error("Google Ads active view campaigns query failed", error);
+      }
 
       let adsRes: AdsBatchResult = [];
       try {
@@ -1009,6 +1049,21 @@ Deno.serve(async (req) => {
         );
       } catch (error) {
         console.error("Google Ads ad video metrics query failed", error);
+      }
+
+      let adActiveViewMetricsRes: AdVideoMetricsBatchResult = [];
+      try {
+        adActiveViewMetricsRes = await googleAdsRequest<AdVideoMetricsBatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          {
+            method: "POST",
+            body: JSON.stringify({ query: adActiveViewMetricsQuery }),
+          },
+        );
+      } catch (error) {
+        console.error("Google Ads ad active view metrics query failed", error);
       }
 
       let videoAdsRes: VideoAdsBatchResult = [];
@@ -1250,6 +1305,25 @@ Deno.serve(async (req) => {
         ...optionalCampRes.flatMap((res) => Array.isArray(res) ? res : [res]),
       ];
       const campaignLevelVideoMetricIds = new Set<string>();
+      const adVideoMetricBatches = [
+        ...(Array.isArray(adVideoMetricsRes) ? adVideoMetricsRes : [adVideoMetricsRes]),
+        ...(Array.isArray(adActiveViewMetricsRes) ? adActiveViewMetricsRes : [adActiveViewMetricsRes]),
+      ];
+      const getVideoQuartileRates = (metrics?: {
+        videoQuartileP25Rate?: number;
+        videoQuartileP50Rate?: number;
+        videoQuartileP75Rate?: number;
+        videoQuartileP100Rate?: number;
+        activeViewAudibleQuartileP25Rate?: number;
+        activeViewAudibleQuartileP50Rate?: number;
+        activeViewAudibleQuartileP75Rate?: number;
+        activeViewAudibleQuartileP100Rate?: number;
+      }) => ({
+        p25: Number(metrics?.videoQuartileP25Rate || metrics?.activeViewAudibleQuartileP25Rate || 0),
+        p50: Number(metrics?.videoQuartileP50Rate || metrics?.activeViewAudibleQuartileP50Rate || 0),
+        p75: Number(metrics?.videoQuartileP75Rate || metrics?.activeViewAudibleQuartileP75Rate || 0),
+        p100: Number(metrics?.videoQuartileP100Rate || metrics?.activeViewAudibleQuartileP100Rate || 0),
+      });
 
       for (const batch of campaignBatches) {
         for (const result of (batch.results || [])) {
@@ -1258,10 +1332,7 @@ Deno.serve(async (req) => {
           const name = String(result.campaign?.name || id);
           const campaignType = String(result.campaign?.advertisingChannelType || "");
           const videoViews = Number(result.metrics?.videoViews || 0);
-          const quartile25Rate = Number(result.metrics?.videoQuartileP25Rate || 0);
-          const quartile50Rate = Number(result.metrics?.videoQuartileP50Rate || 0);
-          const quartile75Rate = Number(result.metrics?.videoQuartileP75Rate || 0);
-          const quartile100Rate = Number(result.metrics?.videoQuartileP100Rate || 0);
+          const quartileRates = getVideoQuartileRates(result.metrics);
           const cur = byCampaign.get(id) || {
             id,
             name,
@@ -1287,27 +1358,24 @@ Deno.serve(async (req) => {
           cur.averageFrequency = Number(result.metrics?.averageImpressionFrequencyPerUser || cur.averageFrequency || 0);
           cur.averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000 || cur.averageCpv || 0;
           cur.videoViews += videoViews;
-          if (videoViews > 0 || quartile25Rate > 0 || quartile50Rate > 0 || quartile75Rate > 0 || quartile100Rate > 0) {
+          if (videoViews > 0 || quartileRates.p25 > 0 || quartileRates.p50 > 0 || quartileRates.p75 > 0 || quartileRates.p100 > 0) {
             campaignLevelVideoMetricIds.add(id);
           }
-          cur.videoQuartile25 = quartile25Rate > 0 ? quartile25Rate * 100 : cur.videoQuartile25;
-          cur.videoQuartile50 = quartile50Rate > 0 ? quartile50Rate * 100 : cur.videoQuartile50;
-          cur.videoQuartile75 = quartile75Rate > 0 ? quartile75Rate * 100 : cur.videoQuartile75;
-          cur.videoQuartile100 = quartile100Rate > 0 ? quartile100Rate * 100 : cur.videoQuartile100;
+          cur.videoQuartile25 = quartileRates.p25 > 0 ? quartileRates.p25 * 100 : cur.videoQuartile25;
+          cur.videoQuartile50 = quartileRates.p50 > 0 ? quartileRates.p50 * 100 : cur.videoQuartile50;
+          cur.videoQuartile75 = quartileRates.p75 > 0 ? quartileRates.p75 * 100 : cur.videoQuartile75;
+          cur.videoQuartile100 = quartileRates.p100 > 0 ? quartileRates.p100 * 100 : cur.videoQuartile100;
           byCampaign.set(id, cur);
         }
       }
 
-      for (const batch of (Array.isArray(adVideoMetricsRes) ? adVideoMetricsRes : [adVideoMetricsRes])) {
+      for (const batch of adVideoMetricBatches) {
         for (const result of (batch.results || [])) {
           const campaignId = String(result.campaign?.id || "");
           if (!campaignId) continue;
 
           const videoViews = Number(result.metrics?.videoViews || 0);
-          const quartile25Rate = Number(result.metrics?.videoQuartileP25Rate || 0);
-          const quartile50Rate = Number(result.metrics?.videoQuartileP50Rate || 0);
-          const quartile75Rate = Number(result.metrics?.videoQuartileP75Rate || 0);
-          const quartile100Rate = Number(result.metrics?.videoQuartileP100Rate || 0);
+          const quartileRates = getVideoQuartileRates(result.metrics);
           const current = byCampaign.get(campaignId) || {
             id: campaignId,
             name: String(result.campaign?.name || campaignId),
@@ -1328,10 +1396,10 @@ Deno.serve(async (req) => {
           current.averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000 || current.averageCpv || 0;
           if (!campaignLevelVideoMetricIds.has(campaignId)) {
             current.videoViews += videoViews;
-            current.videoQuartile25 = quartile25Rate > 0 ? quartile25Rate * 100 : current.videoQuartile25;
-            current.videoQuartile50 = quartile50Rate > 0 ? quartile50Rate * 100 : current.videoQuartile50;
-            current.videoQuartile75 = quartile75Rate > 0 ? quartile75Rate * 100 : current.videoQuartile75;
-            current.videoQuartile100 = quartile100Rate > 0 ? quartile100Rate * 100 : current.videoQuartile100;
+            current.videoQuartile25 = quartileRates.p25 > 0 ? quartileRates.p25 * 100 : current.videoQuartile25;
+            current.videoQuartile50 = quartileRates.p50 > 0 ? quartileRates.p50 * 100 : current.videoQuartile50;
+            current.videoQuartile75 = quartileRates.p75 > 0 ? quartileRates.p75 * 100 : current.videoQuartile75;
+            current.videoQuartile100 = quartileRates.p100 > 0 ? quartileRates.p100 * 100 : current.videoQuartile100;
           }
           byCampaign.set(campaignId, current);
         }
@@ -1462,7 +1530,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      for (const batch of (Array.isArray(adVideoMetricsRes) ? adVideoMetricsRes : [adVideoMetricsRes])) {
+      for (const batch of adVideoMetricBatches) {
         for (const result of (batch.results || [])) {
           const campaignId = String(result.campaign?.id || "");
           const adId = String(result.adGroupAd?.ad?.id || "");
@@ -1474,10 +1542,11 @@ Deno.serve(async (req) => {
 
           current.averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000 || current.averageCpv || 0;
           current.videoViews += videoViews;
-          current.videoQuartile25 = Number(result.metrics?.videoQuartileP25Rate || 0) > 0 ? Number(result.metrics?.videoQuartileP25Rate || 0) * 100 : current.videoQuartile25;
-          current.videoQuartile50 = Number(result.metrics?.videoQuartileP50Rate || 0) > 0 ? Number(result.metrics?.videoQuartileP50Rate || 0) * 100 : current.videoQuartile50;
-          current.videoQuartile75 = Number(result.metrics?.videoQuartileP75Rate || 0) > 0 ? Number(result.metrics?.videoQuartileP75Rate || 0) * 100 : current.videoQuartile75;
-          current.videoQuartile100 = Number(result.metrics?.videoQuartileP100Rate || 0) > 0 ? Number(result.metrics?.videoQuartileP100Rate || 0) * 100 : current.videoQuartile100;
+          const quartileRates = getVideoQuartileRates(result.metrics);
+          current.videoQuartile25 = quartileRates.p25 > 0 ? quartileRates.p25 * 100 : current.videoQuartile25;
+          current.videoQuartile50 = quartileRates.p50 > 0 ? quartileRates.p50 * 100 : current.videoQuartile50;
+          current.videoQuartile75 = quartileRates.p75 > 0 ? quartileRates.p75 * 100 : current.videoQuartile75;
+          current.videoQuartile100 = quartileRates.p100 > 0 ? quartileRates.p100 * 100 : current.videoQuartile100;
           adAgg.set(adId, current);
         }
       }
@@ -1564,10 +1633,10 @@ Deno.serve(async (req) => {
           current.impressions += impressions;
           current.averageCpv = averageCpv || current.averageCpv || 0;
           current.videoViews += videoViews;
-          current.videoQuartile25 += videoQuartile25;
-          current.videoQuartile50 += videoQuartile50;
-          current.videoQuartile75 += videoQuartile75;
-          current.videoQuartile100 += videoQuartile100;
+          current.videoQuartile25 = videoQuartile25 > 0 ? videoQuartile25 : current.videoQuartile25;
+          current.videoQuartile50 = videoQuartile50 > 0 ? videoQuartile50 : current.videoQuartile50;
+          current.videoQuartile75 = videoQuartile75 > 0 ? videoQuartile75 : current.videoQuartile75;
+          current.videoQuartile100 = videoQuartile100 > 0 ? videoQuartile100 : current.videoQuartile100;
           videoAgg.set(key, current);
         }
       }
