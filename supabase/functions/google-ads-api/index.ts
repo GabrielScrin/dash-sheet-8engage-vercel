@@ -19,7 +19,7 @@ type GoogleAdsConnectionRow = {
 
 const GOOGLE_OAUTH_URL = "https://www.googleapis.com/oauth2/v3/token";
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
-const GOOGLE_ADS_API_BASE = "https://googleads.googleapis.com/v20";
+const GOOGLE_ADS_API_BASE = "https://googleads.googleapis.com/v24";
 const GOOGLE_ADS_SCOPE = "https://www.googleapis.com/auth/adwords";
 
 const normalizeCustomerId = (value: string | null | undefined) =>
@@ -203,11 +203,18 @@ async function googleAdsRequest<T>(
   const data = await response.json();
   if (!response.ok) {
     const googleAdsError = data?.error?.details?.[0]?.errors?.[0];
+    let requestQuery = "";
+    try {
+      requestQuery = JSON.parse(String(init?.body || "{}"))?.query || "";
+    } catch {
+      requestQuery = "";
+    }
+    const rawGoogleError = JSON.stringify(data?.error || data || {}).slice(0, 1200);
     const message =
       data?.error?.message ||
       googleAdsError?.message ||
       (googleAdsError?.errorCode ? JSON.stringify(googleAdsError.errorCode) : "") ||
-      "Erro na API do Google Ads";
+      `Erro na API do Google Ads (${response.status})${requestQuery ? ` na query: ${requestQuery.slice(0, 180)}` : ""}. Detalhe: ${rawGoogleError}`;
     console.error("Google Ads API request failed", {
       path,
       status: response.status,
@@ -849,15 +856,22 @@ Deno.serve(async (req) => {
         }>;
       }>;
 
-      const tsRes = await googleAdsRequest<BatchResult>(
-        accessToken,
-        typedConnection,
-        `/customers/${customerId}/googleAds:searchStream`,
-        {
-          method: "POST",
-          body: JSON.stringify({ query: timeseriesQuery }),
-        },
-      );
+      let tsRes: BatchResult = [];
+      let timeseriesFallbackTotals: { spend: number; impressions: number; clicks: number; conversions: number } | null = null;
+      try {
+        tsRes = await googleAdsRequest<BatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          {
+            method: "POST",
+            body: JSON.stringify({ query: timeseriesQuery }),
+          },
+        );
+      } catch (error) {
+        console.error("Google Ads timeseries query failed, retrying aggregated insights query", error);
+        timeseriesFallbackTotals = await fetchInsights(accessToken, typedConnection, startDate, endDate);
+      }
 
       let campRes: BatchResult = [];
       try {
@@ -1118,6 +1132,15 @@ Deno.serve(async (req) => {
         }
       }
       const timeseries = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+      if (timeseries.length === 0 && timeseriesFallbackTotals) {
+        timeseries.push({
+          date: endDate,
+          spend: timeseriesFallbackTotals.spend,
+          conversions: timeseriesFallbackTotals.conversions,
+          impressions: timeseriesFallbackTotals.impressions,
+          clicks: timeseriesFallbackTotals.clicks,
+        });
+      }
 
       const byCampaign = new Map<string, {
         id: string;
