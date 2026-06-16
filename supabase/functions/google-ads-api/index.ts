@@ -647,7 +647,7 @@ Deno.serve(async (req) => {
 
       const cpvCampaignsQuery = [
         "SELECT campaign.id, campaign.name, campaign.advertising_channel_type,",
-        "metrics.average_cpv",
+        "metrics.trueview_average_cpv",
         "FROM campaign",
         `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
         "AND campaign.status != 'REMOVED'",
@@ -655,7 +655,7 @@ Deno.serve(async (req) => {
 
       const videoCampaignsQuery = [
         "SELECT campaign.id, campaign.name, campaign.advertising_channel_type,",
-        "metrics.video_views,",
+        "metrics.video_trueview_views,",
         "metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate, metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate",
         "FROM campaign",
         `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
@@ -720,7 +720,7 @@ Deno.serve(async (req) => {
 
       const adVideoMetricsQuery = [
         "SELECT campaign.id, campaign.name, ad_group_ad.ad.id,",
-        "metrics.average_cpv, metrics.video_views,",
+        "metrics.trueview_average_cpv, metrics.video_trueview_views,",
         "metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate, metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate",
         "FROM ad_group_ad",
         `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
@@ -776,7 +776,9 @@ Deno.serve(async (req) => {
             uniqueUsers?: string;
             averageImpressionFrequencyPerUser?: number;
             averageCpv?: number;
+            trueviewAverageCpv?: number;
             videoViews?: string;
+            videoTrueviewViews?: string;
             videoQuartileP25Rate?: number;
             videoQuartileP50Rate?: number;
             videoQuartileP75Rate?: number;
@@ -836,7 +838,9 @@ Deno.serve(async (req) => {
           };
           metrics?: {
             averageCpv?: number;
+            trueviewAverageCpv?: number;
             videoViews?: string;
+            videoTrueviewViews?: string;
             videoQuartileP25Rate?: number;
             videoQuartileP50Rate?: number;
             videoQuartileP75Rate?: number;
@@ -1324,6 +1328,10 @@ Deno.serve(async (req) => {
         p75: Number(metrics?.videoQuartileP75Rate || metrics?.activeViewAudibleQuartileP75Rate || 0),
         p100: Number(metrics?.videoQuartileP100Rate || metrics?.activeViewAudibleQuartileP100Rate || 0),
       });
+      const getGoogleAdsVideoViews = (metrics?: { videoViews?: string; videoTrueviewViews?: string }) =>
+        Number(metrics?.videoTrueviewViews || metrics?.videoViews || 0);
+      const getGoogleAdsAverageCpv = (metrics?: { averageCpv?: number; trueviewAverageCpv?: number }) =>
+        Number(metrics?.trueviewAverageCpv || metrics?.averageCpv || 0) / 1_000_000;
 
       for (const batch of campaignBatches) {
         for (const result of (batch.results || [])) {
@@ -1331,7 +1339,7 @@ Deno.serve(async (req) => {
           if (!id) continue;
           const name = String(result.campaign?.name || id);
           const campaignType = String(result.campaign?.advertisingChannelType || "");
-          const videoViews = Number(result.metrics?.videoViews || 0);
+          const videoViews = getGoogleAdsVideoViews(result.metrics);
           const quartileRates = getVideoQuartileRates(result.metrics);
           const cur = byCampaign.get(id) || {
             id,
@@ -1356,7 +1364,7 @@ Deno.serve(async (req) => {
           cur.clicks += Number(result.metrics?.clicks || 0);
           cur.uniqueUsers += Number(result.metrics?.uniqueUsers || 0);
           cur.averageFrequency = Number(result.metrics?.averageImpressionFrequencyPerUser || cur.averageFrequency || 0);
-          cur.averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000 || cur.averageCpv || 0;
+          cur.averageCpv = getGoogleAdsAverageCpv(result.metrics) || cur.averageCpv || 0;
           cur.videoViews += videoViews;
           if (videoViews > 0 || quartileRates.p25 > 0 || quartileRates.p50 > 0 || quartileRates.p75 > 0 || quartileRates.p100 > 0) {
             campaignLevelVideoMetricIds.add(id);
@@ -1374,7 +1382,7 @@ Deno.serve(async (req) => {
           const campaignId = String(result.campaign?.id || "");
           if (!campaignId) continue;
 
-          const videoViews = Number(result.metrics?.videoViews || 0);
+          const videoViews = getGoogleAdsVideoViews(result.metrics);
           const quartileRates = getVideoQuartileRates(result.metrics);
           const current = byCampaign.get(campaignId) || {
             id: campaignId,
@@ -1393,7 +1401,7 @@ Deno.serve(async (req) => {
             videoQuartile75: 0,
             videoQuartile100: 0,
           };
-          current.averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000 || current.averageCpv || 0;
+          current.averageCpv = getGoogleAdsAverageCpv(result.metrics) || current.averageCpv || 0;
           if (!campaignLevelVideoMetricIds.has(campaignId)) {
             current.videoViews += videoViews;
             current.videoQuartile25 = quartileRates.p25 > 0 ? quartileRates.p25 * 100 : current.videoQuartile25;
@@ -1536,11 +1544,11 @@ Deno.serve(async (req) => {
           const adId = String(result.adGroupAd?.ad?.id || "");
           if (!campaignId || !adId) continue;
 
-          const videoViews = Number(result.metrics?.videoViews || 0);
+          const videoViews = getGoogleAdsVideoViews(result.metrics);
           const current = adAgg.get(adId);
           if (!current) continue;
 
-          current.averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000 || current.averageCpv || 0;
+          current.averageCpv = getGoogleAdsAverageCpv(result.metrics) || current.averageCpv || 0;
           current.videoViews += videoViews;
           const quartileRates = getVideoQuartileRates(result.metrics);
           current.videoQuartile25 = quartileRates.p25 > 0 ? quartileRates.p25 * 100 : current.videoQuartile25;
