@@ -947,9 +947,9 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       const { data: sessionData } = await supabase.auth.getSession();
       const invokeHeaders: Record<string, string> = {};
       if (shareToken) invokeHeaders['x-share-token'] = shareToken;
-      const { data } = await supabase.functions.invoke('google-ads-api', {
+      const { data } = await supabase.functions.invoke('google-ads-api?action=get-linked-youtube-channel', {
         headers: invokeHeaders,
-        body: { action: 'get-linked-youtube-channel', projectId },
+        body: { projectId },
       });
       return (data?.channelId as string | null) ?? null;
     },
