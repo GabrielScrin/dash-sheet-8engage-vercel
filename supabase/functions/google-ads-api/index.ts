@@ -709,6 +709,16 @@ Deno.serve(async (req) => {
         "AND ad_group_ad.status != 'REMOVED'",
       ].join(" ");
 
+      const adVideoMetricsQuery = [
+        "SELECT campaign.id, campaign.name, ad_group_ad.ad.id,",
+        "metrics.average_cpv, metrics.video_views,",
+        "metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate, metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate",
+        "FROM ad_group_ad",
+        `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+        "AND campaign.status != 'REMOVED'",
+        "AND ad_group_ad.status != 'REMOVED'",
+      ].join(" ");
+
       const videoAdsQuery = [
         "SELECT campaign.id, campaign.name, video.id, video.title,",
         "metrics.cost_micros, metrics.impressions, metrics.trueview_average_cpv, metrics.video_trueview_views,",
@@ -789,6 +799,25 @@ Deno.serve(async (req) => {
             impressions?: string;
             clicks?: string;
             conversions?: number;
+          };
+        }>;
+      }>;
+
+      type AdVideoMetricsBatchResult = Array<{
+        results?: Array<{
+          campaign?: { id?: string; name?: string };
+          adGroupAd?: {
+            ad?: {
+              id?: string;
+            };
+          };
+          metrics?: {
+            averageCpv?: number;
+            videoViews?: string;
+            videoQuartileP25Rate?: number;
+            videoQuartileP50Rate?: number;
+            videoQuartileP75Rate?: number;
+            videoQuartileP100Rate?: number;
           };
         }>;
       }>;
@@ -965,6 +994,21 @@ Deno.serve(async (req) => {
         } catch (fallbackError) {
           console.error("Google Ads ads fallback query failed", fallbackError);
         }
+      }
+
+      let adVideoMetricsRes: AdVideoMetricsBatchResult = [];
+      try {
+        adVideoMetricsRes = await googleAdsRequest<AdVideoMetricsBatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          {
+            method: "POST",
+            body: JSON.stringify({ query: adVideoMetricsQuery }),
+          },
+        );
+      } catch (error) {
+        console.error("Google Ads ad video metrics query failed", error);
       }
 
       let videoAdsRes: VideoAdsBatchResult = [];
@@ -1205,6 +1249,7 @@ Deno.serve(async (req) => {
         ...(Array.isArray(campRes) ? campRes : [campRes]),
         ...optionalCampRes.flatMap((res) => Array.isArray(res) ? res : [res]),
       ];
+      const campaignLevelVideoMetricIds = new Set<string>();
 
       for (const batch of campaignBatches) {
         for (const result of (batch.results || [])) {
@@ -1242,6 +1287,7 @@ Deno.serve(async (req) => {
           cur.averageFrequency = Number(result.metrics?.averageImpressionFrequencyPerUser || cur.averageFrequency || 0);
           cur.averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000 || cur.averageCpv || 0;
           cur.videoViews += videoViews;
+          if (videoViews > 0) campaignLevelVideoMetricIds.add(id);
           cur.videoQuartile25 += videoViews > 0 ? videoViews * quartile25Rate : 0;
           cur.videoQuartile50 += videoViews > 0 ? videoViews * quartile50Rate : 0;
           cur.videoQuartile75 += videoViews > 0 ? videoViews * quartile75Rate : 0;
@@ -1249,6 +1295,46 @@ Deno.serve(async (req) => {
           byCampaign.set(id, cur);
         }
       }
+
+      for (const batch of (Array.isArray(adVideoMetricsRes) ? adVideoMetricsRes : [adVideoMetricsRes])) {
+        for (const result of (batch.results || [])) {
+          const campaignId = String(result.campaign?.id || "");
+          if (!campaignId) continue;
+
+          const videoViews = Number(result.metrics?.videoViews || 0);
+          const quartile25Rate = Number(result.metrics?.videoQuartileP25Rate || 0);
+          const quartile50Rate = Number(result.metrics?.videoQuartileP50Rate || 0);
+          const quartile75Rate = Number(result.metrics?.videoQuartileP75Rate || 0);
+          const quartile100Rate = Number(result.metrics?.videoQuartileP100Rate || 0);
+          const current = byCampaign.get(campaignId) || {
+            id: campaignId,
+            name: String(result.campaign?.name || campaignId),
+            campaignType: "",
+            spend: 0,
+            conversions: 0,
+            impressions: 0,
+            clicks: 0,
+            uniqueUsers: 0,
+            averageFrequency: 0,
+            averageCpv: 0,
+            videoViews: 0,
+            videoQuartile25: 0,
+            videoQuartile50: 0,
+            videoQuartile75: 0,
+            videoQuartile100: 0,
+          };
+          current.averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000 || current.averageCpv || 0;
+          if (!campaignLevelVideoMetricIds.has(campaignId)) {
+            current.videoViews += videoViews;
+            current.videoQuartile25 += videoViews > 0 ? videoViews * quartile25Rate : 0;
+            current.videoQuartile50 += videoViews > 0 ? videoViews * quartile50Rate : 0;
+            current.videoQuartile75 += videoViews > 0 ? videoViews * quartile75Rate : 0;
+            current.videoQuartile100 += videoViews > 0 ? videoViews * quartile100Rate : 0;
+          }
+          byCampaign.set(campaignId, current);
+        }
+      }
+
       const campaigns = Array.from(byCampaign.values())
         .filter((c) => c.spend > 0)
         .map((c) => ({
@@ -1370,6 +1456,26 @@ Deno.serve(async (req) => {
           current.clicks += clicks;
           current.conversions += conversions;
           current.averageCpc = current.clicks > 0 ? current.spend / current.clicks : 0;
+          adAgg.set(adId, current);
+        }
+      }
+
+      for (const batch of (Array.isArray(adVideoMetricsRes) ? adVideoMetricsRes : [adVideoMetricsRes])) {
+        for (const result of (batch.results || [])) {
+          const campaignId = String(result.campaign?.id || "");
+          const adId = String(result.adGroupAd?.ad?.id || "");
+          if (!campaignId || !adId) continue;
+
+          const videoViews = Number(result.metrics?.videoViews || 0);
+          const current = adAgg.get(adId);
+          if (!current) continue;
+
+          current.averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000 || current.averageCpv || 0;
+          current.videoViews += videoViews;
+          current.videoQuartile25 += videoViews > 0 ? videoViews * Number(result.metrics?.videoQuartileP25Rate || 0) : 0;
+          current.videoQuartile50 += videoViews > 0 ? videoViews * Number(result.metrics?.videoQuartileP50Rate || 0) : 0;
+          current.videoQuartile75 += videoViews > 0 ? videoViews * Number(result.metrics?.videoQuartileP75Rate || 0) : 0;
+          current.videoQuartile100 += videoViews > 0 ? videoViews * Number(result.metrics?.videoQuartileP100Rate || 0) : 0;
           adAgg.set(adId, current);
         }
       }
