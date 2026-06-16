@@ -630,17 +630,33 @@ Deno.serve(async (req) => {
       ].join(" ");
 
       const campaignsQuery = [
-        "SELECT campaign.id, campaign.name, campaign.advertising_channel_type, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions,",
-        "metrics.unique_users, metrics.average_impression_frequency_per_user, metrics.average_cpv, metrics.video_views,",
-        "metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate, metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate",
+        "SELECT campaign.id, campaign.name, campaign.advertising_channel_type,",
+        "metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions",
         "FROM campaign",
         `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
         "AND campaign.status != 'REMOVED'",
       ].join(" ");
 
-      const basicCampaignsQuery = [
+      const reachCampaignsQuery = [
         "SELECT campaign.id, campaign.name, campaign.advertising_channel_type,",
-        "metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions",
+        "metrics.unique_users, metrics.average_impression_frequency_per_user",
+        "FROM campaign",
+        `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+        "AND campaign.status != 'REMOVED'",
+      ].join(" ");
+
+      const cpvCampaignsQuery = [
+        "SELECT campaign.id, campaign.name, campaign.advertising_channel_type,",
+        "metrics.average_cpv",
+        "FROM campaign",
+        `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
+        "AND campaign.status != 'REMOVED'",
+      ].join(" ");
+
+      const videoCampaignsQuery = [
+        "SELECT campaign.id, campaign.name, campaign.advertising_channel_type,",
+        "metrics.video_views,",
+        "metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate, metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate",
         "FROM campaign",
         `WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'`,
         "AND campaign.status != 'REMOVED'",
@@ -872,28 +888,55 @@ Deno.serve(async (req) => {
         timeseriesFallbackTotals = await fetchInsights(accessToken, typedConnection, startDate, endDate);
       }
 
-      let campRes: BatchResult = [];
+      const campRes = await googleAdsRequest<BatchResult>(
+        accessToken,
+        typedConnection,
+        `/customers/${customerId}/googleAds:searchStream`,
+        {
+          method: "POST",
+          body: JSON.stringify({ query: campaignsQuery }),
+        },
+      );
+
+      const optionalCampRes: BatchResult[] = [];
       try {
-        campRes = await googleAdsRequest<BatchResult>(
+        optionalCampRes.push(await googleAdsRequest<BatchResult>(
           accessToken,
           typedConnection,
           `/customers/${customerId}/googleAds:searchStream`,
           {
             method: "POST",
-            body: JSON.stringify({ query: campaignsQuery }),
+            body: JSON.stringify({ query: reachCampaignsQuery }),
           },
-        );
+        ));
       } catch (error) {
-        console.error("Google Ads rich campaigns query failed, retrying basic query", error);
-        campRes = await googleAdsRequest<BatchResult>(
+        console.error("Google Ads reach campaigns query failed", error);
+      }
+      try {
+        optionalCampRes.push(await googleAdsRequest<BatchResult>(
           accessToken,
           typedConnection,
           `/customers/${customerId}/googleAds:searchStream`,
           {
             method: "POST",
-            body: JSON.stringify({ query: basicCampaignsQuery }),
+            body: JSON.stringify({ query: cpvCampaignsQuery }),
           },
-        );
+        ));
+      } catch (error) {
+        console.error("Google Ads CPV campaigns query failed", error);
+      }
+      try {
+        optionalCampRes.push(await googleAdsRequest<BatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          {
+            method: "POST",
+            body: JSON.stringify({ query: videoCampaignsQuery }),
+          },
+        ));
+      } catch (error) {
+        console.error("Google Ads video campaigns query failed", error);
       }
 
       let adsRes: AdsBatchResult = [];
@@ -1158,7 +1201,12 @@ Deno.serve(async (req) => {
         videoQuartile75: number;
         videoQuartile100: number;
       }>();
-      for (const batch of (Array.isArray(campRes) ? campRes : [campRes])) {
+      const campaignBatches = [
+        ...(Array.isArray(campRes) ? campRes : [campRes]),
+        ...optionalCampRes.flatMap((res) => Array.isArray(res) ? res : [res]),
+      ];
+
+      for (const batch of campaignBatches) {
         for (const result of (batch.results || [])) {
           const id = String(result.campaign?.id || "");
           if (!id) continue;
