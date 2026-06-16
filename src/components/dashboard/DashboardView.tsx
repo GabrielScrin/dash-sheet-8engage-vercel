@@ -4136,7 +4136,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
   );
 
   const googleAdsConnectedMetricColumns = useMemo(() => {
-    const baseColumns: Array<{ key: keyof GoogleAdsCampaignMetricRow; label: string; format: 'number' | 'currency' | 'decimal' }> = [
+    const baseColumns: Array<{ key: keyof GoogleAdsCampaignMetricRow; label: string; format: 'number' | 'currency' | 'decimal' | 'percentage' }> = [
       { key: 'spend', label: 'Custo', format: 'currency' },
       { key: 'uniqueUsers', label: 'Usuarios exclusivos', format: 'number' },
       { key: 'impressions', label: 'Impressoes', format: 'number' },
@@ -4157,10 +4157,10 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
 
     return [
       ...baseColumns,
-      { key: 'videoQuartile25' as const, label: 'Views 25%', format: 'number' as const },
-      { key: 'videoQuartile50' as const, label: 'Views 50%', format: 'number' as const },
-      { key: 'videoQuartile75' as const, label: 'Views 75%', format: 'number' as const },
-      { key: 'videoQuartile100' as const, label: 'Views 100%', format: 'number' as const },
+      { key: 'videoQuartile25' as const, label: 'Views 25%', format: 'percentage' as const },
+      { key: 'videoQuartile50' as const, label: 'Views 50%', format: 'percentage' as const },
+      { key: 'videoQuartile75' as const, label: 'Views 75%', format: 'percentage' as const },
+      { key: 'videoQuartile100' as const, label: 'Views 100%', format: 'percentage' as const },
     ];
   }, [activeTab]);
 
@@ -4195,6 +4195,21 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       },
     );
 
+    const weightedRate = (key: 'videoQuartile25' | 'videoQuartile50' | 'videoQuartile75' | 'videoQuartile100') => {
+      const rows = googleAdsConnectedCampaigns
+        .map((campaign) => ({
+          value: Number(campaign[key] || 0),
+          weight: Number(campaign.videoViews || 0) || Number(campaign.impressions || 0) || Number(campaign.spend || 0),
+        }))
+        .filter((row) => row.value > 0 && row.weight > 0);
+      const weightTotal = rows.reduce((sum, row) => sum + row.weight, 0);
+      return weightTotal > 0 ? rows.reduce((sum, row) => sum + (row.value * row.weight), 0) / weightTotal : 0;
+    };
+    totals.videoQuartile25 = weightedRate('videoQuartile25');
+    totals.videoQuartile50 = weightedRate('videoQuartile50');
+    totals.videoQuartile75 = weightedRate('videoQuartile75');
+    totals.videoQuartile100 = weightedRate('videoQuartile100');
+
     const baseCards = [
       { label: 'Custo', value: totals.spend, format: 'currency' as const },
       { label: 'Usuarios exclusivos', value: totals.uniqueUsers, format: 'number' as const },
@@ -4224,10 +4239,10 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       ...baseCards,
       { label: 'Views TrueView', value: totals.videoViews, format: 'number' as const },
       { label: 'CPV TrueView', value: totals.videoViews > 0 ? totals.spend / totals.videoViews : 0, format: 'currency' as const },
-      { label: 'Views 25%', value: totals.videoQuartile25, format: 'number' as const },
-      { label: 'Views 50%', value: totals.videoQuartile50, format: 'number' as const },
-      { label: 'Views 75%', value: totals.videoQuartile75, format: 'number' as const },
-      { label: 'Views 100%', value: totals.videoQuartile100, format: 'number' as const },
+      { label: 'Views 25%', value: totals.videoQuartile25, format: 'percentage' as const },
+      { label: 'Views 50%', value: totals.videoQuartile50, format: 'percentage' as const },
+      { label: 'Views 75%', value: totals.videoQuartile75, format: 'percentage' as const },
+      { label: 'Views 100%', value: totals.videoQuartile100, format: 'percentage' as const },
     ];
   }, [activeTab, googleAdsConnectedCampaigns, isGoogleSheetView]);
 
@@ -4272,6 +4287,21 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
           },
         );
 
+        const weightedRate = (key: 'videoQuartile25' | 'videoQuartile50' | 'videoQuartile75' | 'videoQuartile100') => {
+          const rows = campaigns
+            .map((campaign) => ({
+              value: Number(campaign[key] || 0),
+              weight: Number(campaign.videoViews || 0) || Number(campaign.impressions || 0) || Number(campaign.spend || 0),
+            }))
+            .filter((row) => row.value > 0 && row.weight > 0);
+          const weightTotal = rows.reduce((sum, row) => sum + row.weight, 0);
+          return weightTotal > 0 ? rows.reduce((sum, row) => sum + (row.value * row.weight), 0) / weightTotal : 0;
+        };
+        totals.videoQuartile25 = weightedRate('videoQuartile25');
+        totals.videoQuartile50 = weightedRate('videoQuartile50');
+        totals.videoQuartile75 = weightedRate('videoQuartile75');
+        totals.videoQuartile100 = weightedRate('videoQuartile100');
+
         const summaryCards =
           activeTab === 'descoberta'
             ? [
@@ -4290,10 +4320,10 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                 { label: 'Custo', value: totals.spend, format: 'currency' as const },
                 { label: 'Views TrueView', value: totals.videoViews, format: 'number' as const },
                 { label: 'CPV TrueView', value: totals.videoViews > 0 ? totals.spend / totals.videoViews : 0, format: 'currency' as const },
-                { label: 'Views 25%', value: totals.videoQuartile25, format: 'number' as const },
-                { label: 'Views 50%', value: totals.videoQuartile50, format: 'number' as const },
-                { label: 'Views 75%', value: totals.videoQuartile75, format: 'number' as const },
-                { label: 'Views 100%', value: totals.videoQuartile100, format: 'number' as const },
+                { label: 'Views 25%', value: totals.videoQuartile25, format: 'percentage' as const },
+                { label: 'Views 50%', value: totals.videoQuartile50, format: 'percentage' as const },
+                { label: 'Views 75%', value: totals.videoQuartile75, format: 'percentage' as const },
+                { label: 'Views 100%', value: totals.videoQuartile100, format: 'percentage' as const },
               ];
 
         return {
@@ -4315,10 +4345,10 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       { key: 'averageFrequency', label: 'Freq.', format: 'decimal' as const },
       { key: 'averageCpv', label: 'CPV', format: 'currency' as const },
       { key: 'videoViews', label: 'Views', format: 'number' as const },
-      { key: 'videoQuartile25', label: '25%', format: 'number' as const },
-      { key: 'videoQuartile50', label: '50%', format: 'number' as const },
-      { key: 'videoQuartile75', label: '75%', format: 'number' as const },
-      { key: 'videoQuartile100', label: '100%', format: 'number' as const },
+      { key: 'videoQuartile25', label: '25%', format: 'percentage' as const },
+      { key: 'videoQuartile50', label: '50%', format: 'percentage' as const },
+      { key: 'videoQuartile75', label: '75%', format: 'percentage' as const },
+      { key: 'videoQuartile100', label: '100%', format: 'percentage' as const },
     ],
     [],
   );
