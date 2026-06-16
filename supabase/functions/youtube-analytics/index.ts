@@ -53,11 +53,18 @@ async function getChannelStats(accessToken: string, channelId?: string) {
   return res.json();
 }
 
-async function getAnalytics28Days(accessToken: string, channelId?: string) {
+function getDefaultDateRange() {
   const today = new Date();
   const endDate = today.toISOString().split('T')[0];
   const startDate = new Date(today.getTime() - 28 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  return { startDate, endDate };
+}
 
+function isValidDate(value: string | undefined) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+}
+
+async function getAnalyticsReport(accessToken: string, channelId: string | undefined, startDate: string, endDate: string) {
   const ids = channelId ? `channel==${channelId}` : 'channel==mine';
   const params = new URLSearchParams({
     ids,
@@ -72,17 +79,13 @@ async function getAnalytics28Days(accessToken: string, channelId?: string) {
   );
   if (!res.ok) {
     const body = await res.text();
-    console.error('getAnalytics28Days error', res.status, body);
+    console.error('getAnalyticsReport error', res.status, body);
     throw classifyGoogleError(res.status, body);
   }
   return res.json();
 }
 
-async function getTopVideos(accessToken: string, days = 7, channelId?: string) {
-  const today = new Date();
-  const endDate = today.toISOString().split('T')[0];
-  const startDate = new Date(today.getTime() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
+async function getTopVideos(accessToken: string, channelId: string | undefined, startDate: string, endDate: string) {
   const ids = channelId ? `channel==${channelId}` : 'channel==mine';
   const params = new URLSearchParams({
     ids,
@@ -199,13 +202,21 @@ serve(async (req) => {
 
     // Lê youtubeChannelId do body se enviado pelo frontend
     let requestedChannelId: string | undefined;
+    let requestedStartDate: string | undefined;
+    let requestedEndDate: string | undefined;
     try {
       const bodyText = await req.text();
       if (bodyText) {
         const parsed = JSON.parse(bodyText);
         requestedChannelId = parsed?.youtubeChannelId || undefined;
+        requestedStartDate = parsed?.startDate || undefined;
+        requestedEndDate = parsed?.endDate || undefined;
       }
     } catch { /* body vazio ou não-JSON é ok */ }
+
+    const defaultRange = getDefaultDateRange();
+    const startDate = isValidDate(requestedStartDate) ? requestedStartDate! : defaultRange.startDate;
+    const endDate = isValidDate(requestedEndDate) ? requestedEndDate! : defaultRange.endDate;
 
     accessToken = googleToken ?? await resolveAccessToken(req, authHeader, googleToken, shareToken);
 
@@ -216,8 +227,8 @@ serve(async (req) => {
       const channelId: string | undefined = channelData.items?.[0]?.id;
       try {
         [analytics28, topVideos] = await Promise.all([
-          getAnalytics28Days(accessToken, channelId),
-          getTopVideos(accessToken, 7, channelId),
+          getAnalyticsReport(accessToken, channelId, startDate, endDate),
+          getTopVideos(accessToken, channelId, startDate, endDate),
         ]);
       } catch (analyticsError: any) {
         if (analyticsError.message?.includes("YOUTUBE_SCOPE_REQUIRED") && requestedChannelId) {
@@ -236,8 +247,8 @@ serve(async (req) => {
         const channelId: string | undefined = channelData.items?.[0]?.id;
         try {
           [analytics28, topVideos] = await Promise.all([
-            getAnalytics28Days(accessToken, channelId),
-            getTopVideos(accessToken, 7, channelId),
+            getAnalyticsReport(accessToken, channelId, startDate, endDate),
+            getTopVideos(accessToken, channelId, startDate, endDate),
           ]);
         } catch (analyticsError: any) {
           if (analyticsError.message?.includes("YOUTUBE_SCOPE_REQUIRED") && requestedChannelId) {
@@ -287,6 +298,8 @@ serve(async (req) => {
         subscribersGained: analyticsRow[2] || 0,
         subscribersLost: analyticsRow[3] || 0,
         netSubscribers: (analyticsRow[2] || 0) - (analyticsRow[3] || 0),
+        startDate,
+        endDate,
       },
       topVideos,
       analyticsScopeMissing,
