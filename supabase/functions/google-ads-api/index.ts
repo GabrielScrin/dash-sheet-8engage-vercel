@@ -1287,11 +1287,13 @@ Deno.serve(async (req) => {
           cur.averageFrequency = Number(result.metrics?.averageImpressionFrequencyPerUser || cur.averageFrequency || 0);
           cur.averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000 || cur.averageCpv || 0;
           cur.videoViews += videoViews;
-          if (videoViews > 0) campaignLevelVideoMetricIds.add(id);
-          cur.videoQuartile25 += videoViews > 0 ? videoViews * quartile25Rate : 0;
-          cur.videoQuartile50 += videoViews > 0 ? videoViews * quartile50Rate : 0;
-          cur.videoQuartile75 += videoViews > 0 ? videoViews * quartile75Rate : 0;
-          cur.videoQuartile100 += videoViews > 0 ? videoViews * quartile100Rate : 0;
+          if (videoViews > 0 || quartile25Rate > 0 || quartile50Rate > 0 || quartile75Rate > 0 || quartile100Rate > 0) {
+            campaignLevelVideoMetricIds.add(id);
+          }
+          cur.videoQuartile25 = quartile25Rate > 0 ? quartile25Rate * 100 : cur.videoQuartile25;
+          cur.videoQuartile50 = quartile50Rate > 0 ? quartile50Rate * 100 : cur.videoQuartile50;
+          cur.videoQuartile75 = quartile75Rate > 0 ? quartile75Rate * 100 : cur.videoQuartile75;
+          cur.videoQuartile100 = quartile100Rate > 0 ? quartile100Rate * 100 : cur.videoQuartile100;
           byCampaign.set(id, cur);
         }
       }
@@ -1326,10 +1328,10 @@ Deno.serve(async (req) => {
           current.averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000 || current.averageCpv || 0;
           if (!campaignLevelVideoMetricIds.has(campaignId)) {
             current.videoViews += videoViews;
-            current.videoQuartile25 += videoViews > 0 ? videoViews * quartile25Rate : 0;
-            current.videoQuartile50 += videoViews > 0 ? videoViews * quartile50Rate : 0;
-            current.videoQuartile75 += videoViews > 0 ? videoViews * quartile75Rate : 0;
-            current.videoQuartile100 += videoViews > 0 ? videoViews * quartile100Rate : 0;
+            current.videoQuartile25 = quartile25Rate > 0 ? quartile25Rate * 100 : current.videoQuartile25;
+            current.videoQuartile50 = quartile50Rate > 0 ? quartile50Rate * 100 : current.videoQuartile50;
+            current.videoQuartile75 = quartile75Rate > 0 ? quartile75Rate * 100 : current.videoQuartile75;
+            current.videoQuartile100 = quartile100Rate > 0 ? quartile100Rate * 100 : current.videoQuartile100;
           }
           byCampaign.set(campaignId, current);
         }
@@ -1472,10 +1474,10 @@ Deno.serve(async (req) => {
 
           current.averageCpv = Number(result.metrics?.averageCpv || 0) / 1_000_000 || current.averageCpv || 0;
           current.videoViews += videoViews;
-          current.videoQuartile25 += videoViews > 0 ? videoViews * Number(result.metrics?.videoQuartileP25Rate || 0) : 0;
-          current.videoQuartile50 += videoViews > 0 ? videoViews * Number(result.metrics?.videoQuartileP50Rate || 0) : 0;
-          current.videoQuartile75 += videoViews > 0 ? videoViews * Number(result.metrics?.videoQuartileP75Rate || 0) : 0;
-          current.videoQuartile100 += videoViews > 0 ? videoViews * Number(result.metrics?.videoQuartileP100Rate || 0) : 0;
+          current.videoQuartile25 = Number(result.metrics?.videoQuartileP25Rate || 0) > 0 ? Number(result.metrics?.videoQuartileP25Rate || 0) * 100 : current.videoQuartile25;
+          current.videoQuartile50 = Number(result.metrics?.videoQuartileP50Rate || 0) > 0 ? Number(result.metrics?.videoQuartileP50Rate || 0) * 100 : current.videoQuartile50;
+          current.videoQuartile75 = Number(result.metrics?.videoQuartileP75Rate || 0) > 0 ? Number(result.metrics?.videoQuartileP75Rate || 0) * 100 : current.videoQuartile75;
+          current.videoQuartile100 = Number(result.metrics?.videoQuartileP100Rate || 0) > 0 ? Number(result.metrics?.videoQuartileP100Rate || 0) * 100 : current.videoQuartile100;
           adAgg.set(adId, current);
         }
       }
@@ -1535,10 +1537,10 @@ Deno.serve(async (req) => {
           const impressions = Number(result.metrics?.impressions || 0);
           const averageCpv = Number(result.metrics?.trueviewAverageCpv || 0) / 1_000_000;
           const videoViews = Number(result.metrics?.videoTrueviewViews || 0);
-          const videoQuartile25 = videoViews * Number(result.metrics?.videoQuartileP25Rate || 0);
-          const videoQuartile50 = videoViews * Number(result.metrics?.videoQuartileP50Rate || 0);
-          const videoQuartile75 = videoViews * Number(result.metrics?.videoQuartileP75Rate || 0);
-          const videoQuartile100 = videoViews * Number(result.metrics?.videoQuartileP100Rate || 0);
+          const videoQuartile25 = Number(result.metrics?.videoQuartileP25Rate || 0) * 100;
+          const videoQuartile50 = Number(result.metrics?.videoQuartileP50Rate || 0) * 100;
+          const videoQuartile75 = Number(result.metrics?.videoQuartileP75Rate || 0) * 100;
+          const videoQuartile100 = Number(result.metrics?.videoQuartileP100Rate || 0) * 100;
           const key = `${campaignId}:${videoId}`;
           const current = videoAgg.get(key) || {
             campaignId,
