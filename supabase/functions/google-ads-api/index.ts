@@ -444,9 +444,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const url = new URL(req.url);
-    const action = url.searchParams.get("action");
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -455,7 +452,9 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     const shareTokenHeader = req.headers.get("x-share-token");
 
+    const url = new URL(req.url);
     const body = await req.json().catch(() => ({}));
+    const action = url.searchParams.get("action") || String(body?.action || "").trim();
     const requestProjectId = String(body?.projectId || "").trim();
 
     if (action === "authorize") {

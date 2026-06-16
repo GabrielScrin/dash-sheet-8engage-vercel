@@ -210,23 +210,44 @@ serve(async (req) => {
     accessToken = googleToken ?? await resolveAccessToken(req, authHeader, googleToken, shareToken);
 
     let channelData: any, analytics28: any, topVideos: any;
+    let analyticsScopeMissing = false;
     try {
       channelData = await getChannelStats(accessToken, requestedChannelId);
       const channelId: string | undefined = channelData.items?.[0]?.id;
-      [analytics28, topVideos] = await Promise.all([
-        getAnalytics28Days(accessToken, channelId),
-        getTopVideos(accessToken, 7, channelId),
-      ]);
+      try {
+        [analytics28, topVideos] = await Promise.all([
+          getAnalytics28Days(accessToken, channelId),
+          getTopVideos(accessToken, 7, channelId),
+        ]);
+      } catch (analyticsError: any) {
+        if (analyticsError.message?.includes("YOUTUBE_SCOPE_REQUIRED") && requestedChannelId) {
+          analyticsScopeMissing = true;
+          analytics28 = { rows: [[0, 0, 0, 0]], columnHeaders: [] };
+          topVideos = { videos: [], startDate: undefined, endDate: undefined };
+        } else {
+          throw analyticsError;
+        }
+      }
     } catch (e: any) {
       if (e.message?.includes("YOUTUBE_SCOPE_REQUIRED") && googleToken) {
         // Token da sessão não tem escopo YouTube — tenta via refresh token do banco
         accessToken = await resolveAccessToken(req, authHeader, googleToken, shareToken);
         channelData = await getChannelStats(accessToken, requestedChannelId);
         const channelId: string | undefined = channelData.items?.[0]?.id;
-        [analytics28, topVideos] = await Promise.all([
-          getAnalytics28Days(accessToken, channelId),
-          getTopVideos(accessToken, 7, channelId),
-        ]);
+        try {
+          [analytics28, topVideos] = await Promise.all([
+            getAnalytics28Days(accessToken, channelId),
+            getTopVideos(accessToken, 7, channelId),
+          ]);
+        } catch (analyticsError: any) {
+          if (analyticsError.message?.includes("YOUTUBE_SCOPE_REQUIRED") && requestedChannelId) {
+            analyticsScopeMissing = true;
+            analytics28 = { rows: [[0, 0, 0, 0]], columnHeaders: [] };
+            topVideos = { videos: [], startDate: undefined, endDate: undefined };
+          } else {
+            throw analyticsError;
+          }
+        }
       } else {
         throw e;
       }
@@ -268,6 +289,7 @@ serve(async (req) => {
         netSubscribers: (analyticsRow[2] || 0) - (analyticsRow[3] || 0),
       },
       topVideos,
+      analyticsScopeMissing,
       _debug: {
         rawStats: stats,
         rawAnalyticsRows: analytics28.rows,
