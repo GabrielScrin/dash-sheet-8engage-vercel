@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, LayoutDashboard, ExternalLink, Settings, Trash2, MoreHorizontal, Calendar, FileSpreadsheet } from 'lucide-react';
+import { Plus, LayoutDashboard, ExternalLink, Settings, Trash2, MoreHorizontal, Calendar, FileSpreadsheet, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -57,6 +57,9 @@ export default function Projects() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [newProject, setNewProject] = useState({ name: '', description: '' });
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editName, setEditName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
 
   useEffect(() => {
     fetchProjects();
@@ -124,6 +127,51 @@ export default function Projects() {
       });
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const openRenameDialog = (project: Project) => {
+    setEditingProject(project);
+    setEditName(project.name);
+  };
+
+  const handleRenameProject = async () => {
+    if (!editingProject) return;
+    const trimmedName = editName.trim();
+    if (!trimmedName) {
+      toast({
+        title: 'Nome obrigatório',
+        description: 'Por favor, insira um nome para o dashboard.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSavingName(true);
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({ name: trimmedName })
+        .eq('id', editingProject.id);
+
+      if (error) throw error;
+
+      setProjects((prev) =>
+        prev.map((p) => (p.id === editingProject.id ? { ...p, name: trimmedName } : p)),
+      );
+      toast({
+        title: 'Nome atualizado!',
+        description: 'O nome do dashboard foi alterado com sucesso.',
+      });
+      setEditingProject(null);
+    } catch (error: any) {
+      toast({
+        title: 'Erro ao renomear',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingName(false);
     }
   };
 
@@ -226,6 +274,37 @@ export default function Projects() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          <Dialog open={!!editingProject} onOpenChange={(open) => !open && setEditingProject(null)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Renomear dashboard</DialogTitle>
+                <DialogDescription>
+                  Escolha um novo nome para este dashboard.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-name">Nome do dashboard</Label>
+                  <Input
+                    id="edit-name"
+                    placeholder="Ex: Relatório de Vendas Q1"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleRenameProject()}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEditingProject(null)}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleRenameProject} disabled={isSavingName}>
+                  {isSavingName ? 'Salvando...' : 'Salvar'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
 
         {loading ? (
@@ -293,6 +372,10 @@ export default function Projects() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openRenameDialog(project)}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Renomear
+                              </DropdownMenuItem>
                               <DropdownMenuItem asChild>
                                 <Link to={`/app/projects/${project.id}/config`}>
                                   <Settings className="mr-2 h-4 w-4" />

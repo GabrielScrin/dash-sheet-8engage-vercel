@@ -434,7 +434,7 @@ export default function ProjectConfig() {
 
       toast({
         title: 'Abas selecionadas!',
-        description: 'Perpetua, Descoberta, Consideracao e Criativos configuradas com sucesso.',
+        description: 'Perpétuo, Descoberta, Consideracao e Criativos configuradas com sucesso.',
       });
     } catch (error: any) {
       toast({
@@ -1024,7 +1024,7 @@ export default function ProjectConfig() {
       if (!hasPerpetua || !hasDistribuicao || !hasConsideracao || !hasCriativos) {
         toast({
           title: 'Selecione as abas primeiro',
-          description: 'Defina as abas de Perpetua, Descoberta, Consideracao e Criativos antes de continuar.',
+          description: 'Defina as abas de Perpétuo, Descoberta, Consideracao e Criativos antes de continuar.',
           variant: 'destructive',
         });
         return;

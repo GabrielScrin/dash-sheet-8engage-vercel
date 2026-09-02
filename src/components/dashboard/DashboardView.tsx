@@ -4774,7 +4774,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
         <TabsList className={`grid w-full ${isGoogleSheetView ? 'max-w-lg grid-cols-3' : 'max-w-md grid-cols-3'}`}>
-          {!isGoogleSheetView && <TabsTrigger value="perpetua">Perpetua</TabsTrigger>}
+          {!isGoogleSheetView && <TabsTrigger value="perpetua">Perpétuo</TabsTrigger>}
           <TabsTrigger value="descoberta">Descoberta</TabsTrigger>
           <TabsTrigger value="consideracao">Consideracao</TabsTrigger>
           {isGoogleSheetView && (
