@@ -142,13 +142,13 @@ export function SheetTabSelector({
                 Escolha qual aba alimenta cada visualizacao principal do dashboard.
               </p>
             </div>
-            <div className="text-xs text-muted-foreground">Perpetua + Descoberta + Consideracao + Criativos</div>
+            <div className="text-xs text-muted-foreground">Perpétuo + Descoberta + Consideracao + Criativos</div>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Card>
               <CardContent className="p-4 space-y-2">
-                <p className="text-sm font-medium">Aba da visao Perpetua</p>
+                <p className="text-sm font-medium">Aba da visao Perpétuo</p>
                 <Select value={perpetuaTab} onValueChange={setPerpetuaTab}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione a aba" />
