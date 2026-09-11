@@ -330,6 +330,7 @@ export default function ProjectConfig() {
             sheet_distribuicao: null,
             sheet_consideracao: null,
             sheet_criativos: null,
+            sheet_perpetuo_sos: null,
           },
         })
         .eq('id', project.id);
@@ -348,6 +349,7 @@ export default function ProjectConfig() {
           sheet_distribuicao: null,
           sheet_consideracao: null,
           sheet_criativos: null,
+          sheet_perpetuo_sos: null,
         },
       });
       setSheetSelectorOpen(false);
@@ -392,15 +394,17 @@ export default function ProjectConfig() {
     distribuicao,
     consideracao,
     criativos,
+    perpetuoSos,
   }: {
     perpetua: string;
     distribuicao: string;
     consideracao: string;
     criativos: string;
+    perpetuoSos?: string;
   }) => {
     if (!project) return;
     try {
-      const sheetNames = Array.from(new Set([perpetua, distribuicao, consideracao, criativos].filter(Boolean))) as string[];
+      const sheetNames = Array.from(new Set([perpetua, distribuicao, consideracao, criativos, perpetuoSos].filter(Boolean))) as string[];
       const { error } = await supabase
         .from('projects')
         .update({
@@ -412,6 +416,7 @@ export default function ProjectConfig() {
             sheet_distribuicao: distribuicao,
             sheet_consideracao: consideracao,
             sheet_criativos: criativos,
+            sheet_perpetuo_sos: perpetuoSos || null,
           },
         })
         .eq('id', project.id);
@@ -428,13 +433,14 @@ export default function ProjectConfig() {
           sheet_distribuicao: distribuicao,
           sheet_consideracao: consideracao,
           sheet_criativos: criativos,
+          sheet_perpetuo_sos: perpetuoSos || null,
         },
       });
       setCurrentStep(2);
 
       toast({
         title: 'Abas selecionadas!',
-        description: 'Perpétuo, Descoberta, Consideracao e Criativos configuradas com sucesso.',
+        description: 'Sono e Rotina, Descoberta, Consideracao e Criativos configuradas com sucesso.',
       });
     } catch (error: any) {
       toast({
@@ -940,6 +946,7 @@ export default function ProjectConfig() {
                   selectedDistribuicao={project.source_config?.sheet_distribuicao || project.sheet_names?.[1] || project.sheet_names?.[0] || null}
                   selectedConsideracao={project.source_config?.sheet_consideracao || project.sheet_names?.[2] || project.sheet_names?.[1] || project.sheet_names?.[0] || null}
                   selectedCriativos={project.source_config?.sheet_criativos || project.sheet_names?.[3] || project.sheet_names?.[2] || project.sheet_names?.[1] || project.sheet_names?.[0] || null}
+                  selectedPerpetuoSos={project.source_config?.sheet_perpetuo_sos || null}
                   onSelect={handleTabsSelect}
                   onBack={() => setCurrentStep(1)}
                 />

@@ -37,6 +37,7 @@ interface MetaSourceConfig {
   sheet_distribuicao?: string | null;
   sheet_consideracao?: string | null;
   sheet_criativos?: string | null;
+  sheet_perpetuo_sos?: string | null;
   [key: string]: unknown;
 }
 
@@ -1011,10 +1012,15 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
   const sheetCriativosName =
     String(sourceConfig?.sheet_criativos || '') ||
     pickConfiguredSheetName(project?.sheet_names as string[] | null | undefined, 3, [/\bcriativ/, /\bcreative/], String(project?.sheet_name || ''));
+  const sheetPerpetuoSosName =
+    String(sourceConfig?.sheet_perpetuo_sos || '') ||
+    pickConfiguredSheetName(project?.sheet_names as string[] | null | undefined, 4, [/\bsos\b/], '');
   const hasGoogleSheetConfig =
     project?.source_type === 'sheet' && Boolean(sourceConfig?.google_ads_customer_id || sourceConfig?.google_ads_customer_name);
   const isGoogleSheetView =
     project?.source_type === 'sheet' && sheetDashboardSource === 'google';
+  const hasPerpetuoSosConfig =
+    project?.source_type === 'sheet' && Boolean(sheetPerpetuoSosName);
 
   const sheetNames: string[] = Array.from(
     new Set(
@@ -1023,6 +1029,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
         sheetDistribuicaoName,
         sheetConsideracaoName,
         sheetCriativosName,
+        sheetPerpetuoSosName,
       ].filter(Boolean),
     ),
   );
@@ -1034,7 +1041,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       return;
     }
 
-    if (sheetDashboardSource === 'google' && activeTab === 'perpetua') {
+    if (sheetDashboardSource === 'google' && (activeTab === 'perpetua' || activeTab === 'perpetuo_sos')) {
       setActiveTab('descoberta');
     }
 
@@ -1116,7 +1123,9 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
   const sourceRows =
     (project?.source_type === 'meta_ads'
       ? (metaInsightsQuery.data || [])
-      : (sheetRowsByName[sheetPerpetuaName] || (allSheetsQuery.data as any)?.all || [])) as any[];
+      : (activeTab === 'perpetuo_sos'
+          ? (sheetRowsByName[sheetPerpetuoSosName] || (allSheetsQuery.data as any)?.all || [])
+          : (sheetRowsByName[sheetPerpetuaName] || (allSheetsQuery.data as any)?.all || []))) as any[];
   const discoverySourceRows =
     (project?.source_type === 'meta_ads'
       ? []
@@ -4691,6 +4700,276 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     );
   };
 
+  // Conteúdo compartilhado entre as abas "Sono e Rotina" e "Perpétuo SOS":
+  // ambas usam os mesmos widgets, só mudam os dados por trás (sourceRows já
+  // troca de planilha conforme activeTab).
+  const perpetuoTabContent = (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      transition={{ duration: 0.2 }}
+      className="space-y-8"
+    >
+      {/* Big Numbers */}
+      {bigNumbersToRender.length > 0 && (
+        <section>
+          <div className="mb-4">
+            <h3 className="text-lg font-semibold">Indicadores Principais</h3>
+            {project?.source_type === 'meta_ads' && googleAdsInsightsQuery.data != null && (
+              <p className="mt-0.5 text-sm text-muted-foreground">Painel consolidado de mídia paga · visão combinada do período selecionado</p>
+            )}
+          </div>
+          {project?.source_type !== 'meta_ads' && sheetMetricOptions.length > 0 ? (
+            <div className="space-y-3">
+              {[0, 4].map((offset) => (
+                <React.Fragment key={`big-number-row-${offset}`}>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {sheetBigNumberColumns.slice(offset, offset + 4).map((metricKey, localIndex) => {
+                      const index = offset + localIndex;
+                      return (
+                        <Select
+                          key={`sheet-big-number-${index}`}
+                          value={metricKey}
+                          onValueChange={(value) =>
+                            setSheetBigNumberColumns((prev) => {
+                              const next = [...prev];
+                              next[index] = value;
+                              return next;
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder={`Métrica ${index + 1}`} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {sheetMetricOptions.map((option) => (
+                              <SelectItem key={option.key} value={option.key}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      );
+                    })}
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    {bigNumbersToRender.slice(offset, offset + 4).map((kpi, localIndex) => {
+                      const index = offset + localIndex;
+                      const { label, value, format } = kpi;
+                      const previousValue = 'previousValue' in kpi ? (kpi as any).previousValue : undefined;
+                      return (
+                        <BigNumberCard
+                          key={`${label}-${index}`}
+                          label={label}
+                          value={value}
+                          previousValue={previousValue}
+                          format={format}
+                          delay={index * 0.1}
+                        />
+                      );
+                    })}
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {bigNumbersToRender.map((kpi, index) => {
+                const { label, value, format } = kpi;
+                const previousValue = 'previousValue' in kpi ? (kpi as any).previousValue : undefined;
+                const subtitle = 'subtitle' in kpi ? (kpi as any).subtitle as string | undefined : undefined;
+                const budgetProgress = 'budgetProgress' in kpi ? (kpi as any).budgetProgress as number | undefined : undefined;
+                const budgetSpend = 'budgetSpend' in kpi ? (kpi as any).budgetSpend as number | undefined : undefined;
+                const budgetTarget = 'budgetTarget' in kpi ? (kpi as any).budgetTarget as number | undefined : undefined;
+                return (
+                  <BigNumberCard
+                    key={label}
+                    label={label}
+                    value={value}
+                    previousValue={previousValue}
+                    format={format}
+                    delay={index * 0.1}
+                    subtitle={subtitle}
+                    budgetProgress={budgetProgress}
+                    budgetSpend={budgetSpend}
+                    budgetTarget={budgetTarget}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {project?.source_type === 'meta_ads' && googleAdsBigNumbers.length > 0 && (
+        <section>
+          <div className="mb-4">
+            <h3 className="text-lg font-semibold">Google Ads</h3>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Metricas vindas da conexao Google Ads deste projeto.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            {googleAdsBigNumbers.map((kpi, index) => (
+              <BigNumberCard
+                key={kpi.label}
+                label={kpi.label}
+                value={kpi.value}
+                format={kpi.format}
+                delay={index * 0.08}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {trendRows.length > 0 && chartMetricOptions.length > 0 && (
+        <section>
+          <h3 className="mb-4 text-lg font-semibold">Gráficos de Tendência</h3>
+          <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {chartSeriesColumns.slice(0, 4).map((metricKey, index) => (
+              <Select
+                key={`chart-metric-${index}`}
+                value={metricKey}
+                onValueChange={(value) =>
+                  setChartMetricColumns((prev) => {
+                    const next = [...prev];
+                    next[index] = value;
+                    return next;
+                  })
+                }
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder={`Métrica ${index + 1}`} />
+                </SelectTrigger>
+                <SelectContent>
+                  {chartMetricOptions.map((option) => (
+                    <SelectItem key={option.key} value={option.key}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ))}
+          </div>
+          <div className="h-[320px] rounded-lg border p-2">
+            <ChartContainer config={trendChartConfig} className="h-full w-full">
+              <LineChart data={trendRows} margin={{ left: 8, right: 8, top: 16, bottom: 8 }}>
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis dataKey="period" tickLine={false} axisLine={false} minTickGap={24} />
+                {chartSeriesColumns.slice(0, 4).map((metricKey, index) => (
+                  <YAxis
+                    key={`y-${metricKey}`}
+                    yAxisId={`y-${index}`}
+                    tickLine={false}
+                    axisLine={false}
+                    width={index === 0 ? 80 : 0}
+                    hide={index !== 0}
+                    domain={['auto', 'auto']}
+                  />
+                ))}
+                <ChartTooltip content={<ChartTooltipContent />} />
+                {chartSeriesColumns.slice(0, 4).map((metricKey, index) => (
+                  <Line
+                    key={metricKey}
+                    type="monotone"
+                    dataKey={metricKey}
+                    yAxisId={`y-${index}`}
+                    stroke={`hsl(var(--chart-${(index % 5) + 1}))`}
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                ))}
+              </LineChart>
+            </ChartContainer>
+          </div>
+        </section>
+      )}
+
+      {/* Weekly Comparison */}
+      {(project?.source_type === 'meta_ads' ? metaWeeklyData.length > 0 : sheetWeeklyData.length > 0) && (
+        <section>
+          <h3 className="mb-4 text-lg font-semibold">
+            {viewMode === 'day' ? 'Visão Diária' : viewMode === 'month' ? 'Visão Mensal' : 'Visão Semanal'}
+          </h3>
+          <WeeklyComparisonTable
+            data={project?.source_type === 'meta_ads' ? (metaWeeklyData as any) : (sheetWeeklyData as any)}
+            isMeta
+            viewMode={viewMode}
+            onViewModeChange={(v) => setViewMode(v)}
+            metricOptions={project?.source_type === 'meta_ads' ? (metaWeeklyMetricOptions as any) : (sheetMetricOptions as any)}
+            defaultMetricColumns={project?.source_type === 'meta_ads' ? ['result', 'impressions', 'reach', 'cpc', 'ctr'] : sheetDefaultWeeklyColumns}
+            metricColumns={project?.source_type === 'meta_ads' ? weeklyMetricColumns : sheetWeeklyMetricColumns}
+            onMetricColumnsChange={project?.source_type === 'meta_ads' ? setWeeklyMetricColumns : setSheetWeeklyMetricColumns}
+          />
+        </section>
+      )}
+
+      {/* Creative Performance */}
+      {(project?.source_type === 'meta_ads' ? metaCreativeDataWithThumbs.length > 0 : sheetCreativeData.length > 0) && (
+        <section>
+          <h3 className="mb-4 text-lg font-semibold">Performance por Criativo</h3>
+          <CreativePerformanceTable
+            data={project?.source_type === 'meta_ads' ? (metaCreativeDataWithThumbs as any) : (sheetCreativeData as any)}
+            selectedCreative={selectedCreative}
+            onCreativeSelect={setSelectedCreative}
+            isMeta
+            metricOptions={project?.source_type === 'meta_ads' ? (metaWeeklyMetricOptions as any) : (sheetCreativeMetricOptions as any)}
+            defaultMetricColumns={project?.source_type === 'meta_ads' ? ['post_engagement', 'hook_rate', 'hold_rate', 'cpc', 'cost_per_result'] : sheetDefaultCreativeColumns}
+            metricColumns={project?.source_type === 'meta_ads' ? creativeMetricColumns : sheetCreativeMetricColumns}
+            onMetricColumnsChange={project?.source_type === 'meta_ads' ? setCreativeMetricColumns : setSheetCreativeMetricColumns}
+          />
+        </section>
+      )}
+
+      {/* Funnel */}
+      {(project?.source_type === 'meta_ads' ? metaFunnelSteps.length > 0 : processedData.funnelData.length > 0) && (
+        <section>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-lg font-semibold">Funil de Conversao</h3>
+            {project?.source_type === 'meta_ads' && (
+              <Select value={funnelType} onValueChange={(v) => setFunnelType(v as any)}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Tipo de funil" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="captacao">Captação</SelectItem>
+                  <SelectItem value="mensagem">Mensagem</SelectItem>
+                  <SelectItem value="conversao">Conversão</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          <FunnelVisualization data={project?.source_type === 'meta_ads' ? (metaFunnelSteps as any) : processedData.funnelData} />
+        </section>
+      )}
+
+      {bigNumbersToRender.length === 0 && !allSheetsQuery.error && (
+        <div className="rounded-lg border border-dashed p-12 text-center">
+          <p className="text-muted-foreground mb-4">
+            {filteredRows.length === 0
+              ? 'Nenhum dado encontrado para os filtros selecionados.'
+              : 'Nenhuma métrica configurada para esta aba.'}
+          </p>
+          {filteredRows.length === 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setDateRange(undefined);
+                setSelectedCreative(null);
+              }}
+            >
+              Limpar Filtros
+            </Button>
+          )}
+        </div>
+      )}
+    </motion.div>
+  );
+
   return (
     <div className="container py-6">
       {setupWarnings.length > 0 && (
@@ -4773,8 +5052,9 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
-        <TabsList className={`grid w-full ${isGoogleSheetView ? 'max-w-lg grid-cols-3' : 'max-w-md grid-cols-3'}`}>
-          {!isGoogleSheetView && <TabsTrigger value="perpetua">Perpétuo</TabsTrigger>}
+        <TabsList className={`grid w-full ${isGoogleSheetView ? 'max-w-lg grid-cols-3' : hasPerpetuoSosConfig ? 'max-w-xl grid-cols-4' : 'max-w-md grid-cols-3'}`}>
+          {!isGoogleSheetView && <TabsTrigger value="perpetua">Sono e Rotina</TabsTrigger>}
+          {!isGoogleSheetView && hasPerpetuoSosConfig && <TabsTrigger value="perpetuo_sos">Perpétuo SOS</TabsTrigger>}
           <TabsTrigger value="descoberta">Descoberta</TabsTrigger>
           <TabsTrigger value="consideracao">Consideracao</TabsTrigger>
           {isGoogleSheetView && (
@@ -4787,270 +5067,11 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
 
         <AnimatePresence mode="wait">
           {!isGoogleSheetView && <TabsContent value="perpetua" className="mt-6">
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="space-y-8"
-            >
-              {/* Big Numbers */}
-              {bigNumbersToRender.length > 0 && (
-                <section>
-                  <div className="mb-4">
-                    <h3 className="text-lg font-semibold">Indicadores Principais</h3>
-                    {project?.source_type === 'meta_ads' && googleAdsInsightsQuery.data != null && (
-                      <p className="mt-0.5 text-sm text-muted-foreground">Painel consolidado de mídia paga · visão combinada do período selecionado</p>
-                    )}
-                  </div>
-                  {project?.source_type !== 'meta_ads' && sheetMetricOptions.length > 0 ? (
-                    <div className="space-y-3">
-                      {[0, 4].map((offset) => (
-                        <React.Fragment key={`big-number-row-${offset}`}>
-                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                            {sheetBigNumberColumns.slice(offset, offset + 4).map((metricKey, localIndex) => {
-                              const index = offset + localIndex;
-                              return (
-                                <Select
-                                  key={`sheet-big-number-${index}`}
-                                  value={metricKey}
-                                  onValueChange={(value) =>
-                                    setSheetBigNumberColumns((prev) => {
-                                      const next = [...prev];
-                                      next[index] = value;
-                                      return next;
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger className="h-8 text-xs">
-                                    <SelectValue placeholder={`Métrica ${index + 1}`} />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {sheetMetricOptions.map((option) => (
-                                      <SelectItem key={option.key} value={option.key}>
-                                        {option.label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              );
-                            })}
-                          </div>
-                          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                            {bigNumbersToRender.slice(offset, offset + 4).map((kpi, localIndex) => {
-                              const index = offset + localIndex;
-                              const { label, value, format } = kpi;
-                              const previousValue = 'previousValue' in kpi ? (kpi as any).previousValue : undefined;
-                              return (
-                                <BigNumberCard
-                                  key={`${label}-${index}`}
-                                  label={label}
-                                  value={value}
-                                  previousValue={previousValue}
-                                  format={format}
-                                  delay={index * 0.1}
-                                />
-                              );
-                            })}
-                          </div>
-                        </React.Fragment>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                      {bigNumbersToRender.map((kpi, index) => {
-                        const { label, value, format } = kpi;
-                        const previousValue = 'previousValue' in kpi ? (kpi as any).previousValue : undefined;
-                        const subtitle = 'subtitle' in kpi ? (kpi as any).subtitle as string | undefined : undefined;
-                        const budgetProgress = 'budgetProgress' in kpi ? (kpi as any).budgetProgress as number | undefined : undefined;
-                        const budgetSpend = 'budgetSpend' in kpi ? (kpi as any).budgetSpend as number | undefined : undefined;
-                        const budgetTarget = 'budgetTarget' in kpi ? (kpi as any).budgetTarget as number | undefined : undefined;
-                        return (
-                          <BigNumberCard
-                            key={label}
-                            label={label}
-                            value={value}
-                            previousValue={previousValue}
-                            format={format}
-                            delay={index * 0.1}
-                            subtitle={subtitle}
-                            budgetProgress={budgetProgress}
-                            budgetSpend={budgetSpend}
-                            budgetTarget={budgetTarget}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-              )}
+            {perpetuoTabContent}
+          </TabsContent>}
 
-              {project?.source_type === 'meta_ads' && googleAdsBigNumbers.length > 0 && (
-                <section>
-                  <div className="mb-4">
-                    <h3 className="text-lg font-semibold">Google Ads</h3>
-                    <p className="mt-0.5 text-sm text-muted-foreground">
-                      Metricas vindas da conexao Google Ads deste projeto.
-                    </p>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-                    {googleAdsBigNumbers.map((kpi, index) => (
-                      <BigNumberCard
-                        key={kpi.label}
-                        label={kpi.label}
-                        value={kpi.value}
-                        format={kpi.format}
-                        delay={index * 0.08}
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {trendRows.length > 0 && chartMetricOptions.length > 0 && (
-                <section>
-                  <h3 className="mb-4 text-lg font-semibold">Gráficos de Tendência</h3>
-                  <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                    {chartSeriesColumns.slice(0, 4).map((metricKey, index) => (
-                      <Select
-                        key={`chart-metric-${index}`}
-                        value={metricKey}
-                        onValueChange={(value) =>
-                          setChartMetricColumns((prev) => {
-                            const next = [...prev];
-                            next[index] = value;
-                            return next;
-                          })
-                        }
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue placeholder={`Métrica ${index + 1}`} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {chartMetricOptions.map((option) => (
-                            <SelectItem key={option.key} value={option.key}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ))}
-                  </div>
-                  <div className="h-[320px] rounded-lg border p-2">
-                    <ChartContainer config={trendChartConfig} className="h-full w-full">
-                      <LineChart data={trendRows} margin={{ left: 8, right: 8, top: 16, bottom: 8 }}>
-                        <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                        <XAxis dataKey="period" tickLine={false} axisLine={false} minTickGap={24} />
-                        {chartSeriesColumns.slice(0, 4).map((metricKey, index) => (
-                          <YAxis
-                            key={`y-${metricKey}`}
-                            yAxisId={`y-${index}`}
-                            tickLine={false}
-                            axisLine={false}
-                            width={index === 0 ? 80 : 0}
-                            hide={index !== 0}
-                            domain={['auto', 'auto']}
-                          />
-                        ))}
-                        <ChartTooltip content={<ChartTooltipContent />} />
-                        {chartSeriesColumns.slice(0, 4).map((metricKey, index) => (
-                          <Line
-                            key={metricKey}
-                            type="monotone"
-                            dataKey={metricKey}
-                            yAxisId={`y-${index}`}
-                            stroke={`hsl(var(--chart-${(index % 5) + 1}))`}
-                            strokeWidth={2}
-                            dot={false}
-                            activeDot={{ r: 4 }}
-                          />
-                        ))}
-                      </LineChart>
-                    </ChartContainer>
-                  </div>
-                </section>
-              )}
-
-              {/* Weekly Comparison */}
-              {(project?.source_type === 'meta_ads' ? metaWeeklyData.length > 0 : sheetWeeklyData.length > 0) && (
-                <section>
-                  <h3 className="mb-4 text-lg font-semibold">
-                    {viewMode === 'day' ? 'Visão Diária' : viewMode === 'month' ? 'Visão Mensal' : 'Visão Semanal'}
-                  </h3>
-                  <WeeklyComparisonTable
-                    data={project?.source_type === 'meta_ads' ? (metaWeeklyData as any) : (sheetWeeklyData as any)}
-                    isMeta
-                    viewMode={viewMode}
-                    onViewModeChange={(v) => setViewMode(v)}
-                    metricOptions={project?.source_type === 'meta_ads' ? (metaWeeklyMetricOptions as any) : (sheetMetricOptions as any)}
-                    defaultMetricColumns={project?.source_type === 'meta_ads' ? ['result', 'impressions', 'reach', 'cpc', 'ctr'] : sheetDefaultWeeklyColumns}
-                    metricColumns={project?.source_type === 'meta_ads' ? weeklyMetricColumns : sheetWeeklyMetricColumns}
-                    onMetricColumnsChange={project?.source_type === 'meta_ads' ? setWeeklyMetricColumns : setSheetWeeklyMetricColumns}
-                  />
-                </section>
-              )}
-
-              {/* Creative Performance */}
-              {(project?.source_type === 'meta_ads' ? metaCreativeDataWithThumbs.length > 0 : sheetCreativeData.length > 0) && (
-                <section>
-                  <h3 className="mb-4 text-lg font-semibold">Performance por Criativo</h3>
-                  <CreativePerformanceTable
-                    data={project?.source_type === 'meta_ads' ? (metaCreativeDataWithThumbs as any) : (sheetCreativeData as any)}
-                    selectedCreative={selectedCreative}
-                    onCreativeSelect={setSelectedCreative}
-                    isMeta
-                    metricOptions={project?.source_type === 'meta_ads' ? (metaWeeklyMetricOptions as any) : (sheetCreativeMetricOptions as any)}
-                    defaultMetricColumns={project?.source_type === 'meta_ads' ? ['post_engagement', 'hook_rate', 'hold_rate', 'cpc', 'cost_per_result'] : sheetDefaultCreativeColumns}
-                    metricColumns={project?.source_type === 'meta_ads' ? creativeMetricColumns : sheetCreativeMetricColumns}
-                    onMetricColumnsChange={project?.source_type === 'meta_ads' ? setCreativeMetricColumns : setSheetCreativeMetricColumns}
-                  />
-                </section>
-              )}
-
-              {/* Funnel */}
-              {(project?.source_type === 'meta_ads' ? metaFunnelSteps.length > 0 : processedData.funnelData.length > 0) && (
-                <section>
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <h3 className="text-lg font-semibold">Funil de Conversao</h3>
-                    {project?.source_type === 'meta_ads' && (
-                      <Select value={funnelType} onValueChange={(v) => setFunnelType(v as any)}>
-                        <SelectTrigger className="w-[220px]">
-                          <SelectValue placeholder="Tipo de funil" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="captacao">Captação</SelectItem>
-                          <SelectItem value="mensagem">Mensagem</SelectItem>
-                          <SelectItem value="conversao">Conversão</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
-                  <FunnelVisualization data={project?.source_type === 'meta_ads' ? (metaFunnelSteps as any) : processedData.funnelData} />
-                </section>
-              )}
-
-              {bigNumbersToRender.length === 0 && !allSheetsQuery.error && (
-                <div className="rounded-lg border border-dashed p-12 text-center">
-                  <p className="text-muted-foreground mb-4">
-                    {filteredRows.length === 0
-                      ? 'Nenhum dado encontrado para os filtros selecionados.'
-                      : 'Nenhuma métrica configurada para esta aba.'}
-                  </p>
-                  {filteredRows.length === 0 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setDateRange(undefined);
-                        setSelectedCreative(null);
-                      }}
-                    >
-                      Limpar Filtros
-                    </Button>
-                  )}
-                </div>
-              )}
-            </motion.div>
+          {!isGoogleSheetView && hasPerpetuoSosConfig && <TabsContent value="perpetuo_sos" className="mt-6">
+            {perpetuoTabContent}
           </TabsContent>}
 
           <TabsContent value="descoberta" className="mt-6">

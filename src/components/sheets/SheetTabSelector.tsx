@@ -25,11 +25,13 @@ interface SheetTabSelectorProps {
   selectedDistribuicao?: string | null;
   selectedConsideracao?: string | null;
   selectedCriativos?: string | null;
+  selectedPerpetuoSos?: string | null;
   onSelect: (selection: {
     perpetua: string;
     distribuicao: string;
     consideracao: string;
     criativos: string;
+    perpetuoSos?: string;
   }) => void;
   onBack: () => void;
 }
@@ -41,6 +43,7 @@ export function SheetTabSelector({
   selectedDistribuicao = null,
   selectedConsideracao = null,
   selectedCriativos = null,
+  selectedPerpetuoSos = null,
   onSelect,
   onBack
 }: SheetTabSelectorProps) {
@@ -51,6 +54,7 @@ export function SheetTabSelector({
   const [distribuicaoTab, setDistribuicaoTab] = useState<string>(selectedDistribuicao || '');
   const [consideracaoTab, setConsideracaoTab] = useState<string>(selectedConsideracao || '');
   const [criativosTab, setCriativosTab] = useState<string>(selectedCriativos || '');
+  const [perpetuoSosTab, setPerpetuoSosTab] = useState<string>(selectedPerpetuoSos || '');
 
   useEffect(() => {
     const fetchTabs = async () => {
@@ -96,6 +100,10 @@ export function SheetTabSelector({
     setCriativosTab(selectedCriativos || '');
   }, [selectedCriativos]);
 
+  useEffect(() => {
+    setPerpetuoSosTab(selectedPerpetuoSos || '');
+  }, [selectedPerpetuoSos]);
+
   const handleConfirm = () => {
     if (!perpetuaTab || !distribuicaoTab || !consideracaoTab || !criativosTab) {
       toast({
@@ -111,6 +119,7 @@ export function SheetTabSelector({
       distribuicao: distribuicaoTab,
       consideracao: consideracaoTab,
       criativos: criativosTab,
+      perpetuoSos: perpetuoSosTab || undefined,
     });
   };
 
@@ -142,13 +151,13 @@ export function SheetTabSelector({
                 Escolha qual aba alimenta cada visualizacao principal do dashboard.
               </p>
             </div>
-            <div className="text-xs text-muted-foreground">Perpétuo + Descoberta + Consideracao + Criativos</div>
+            <div className="text-xs text-muted-foreground">Sono e Rotina + Descoberta + Consideracao + Criativos + Perpétuo SOS (opcional)</div>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Card>
               <CardContent className="p-4 space-y-2">
-                <p className="text-sm font-medium">Aba da visao Perpétuo</p>
+                <p className="text-sm font-medium">Aba da visao Sono e Rotina</p>
                 <Select value={perpetuaTab} onValueChange={setPerpetuaTab}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione a aba" />
@@ -210,6 +219,24 @@ export function SheetTabSelector({
                   <SelectContent>
                     {tabs.map((tab) => (
                       <SelectItem key={`crea-${tab.sheetId}`} value={tab.title}>
+                        {tab.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4 space-y-2">
+                <p className="text-sm font-medium">Aba do Perpétuo SOS (opcional)</p>
+                <Select value={perpetuoSosTab} onValueChange={setPerpetuoSosTab}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a aba" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tabs.map((tab) => (
+                      <SelectItem key={`sos-${tab.sheetId}`} value={tab.title}>
                         {tab.title}
                       </SelectItem>
                     ))}
