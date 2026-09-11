@@ -12,6 +12,21 @@ interface TokenResponse {
   token_type: string;
 }
 
+// Erro vindo da API do Google, carregando o status HTTP pra permitir retry em 401 (token expirado)
+class GoogleApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+class GoogleReconnectRequiredError extends Error {
+  constructor() {
+    super("Google account not connected or refresh token missing.");
+  }
+}
+
 async function refreshAccessToken(refreshToken: string): Promise<string> {
   const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
   const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
@@ -66,7 +81,7 @@ async function listSpreadsheets(accessToken: string) {
     if (!response.ok) {
       const error = await response.text();
       console.error("Drive API error:", error);
-      throw new Error("Failed to list spreadsheets");
+      throw new GoogleApiError("Failed to list spreadsheets", response.status);
     }
 
     const data = await response.json();
@@ -90,7 +105,7 @@ async function getSheetTabs(accessToken: string, spreadsheetId: string) {
   if (!response.ok) {
     const error = await response.text();
     console.error("Sheets API error:", error);
-    throw new Error("Failed to get sheet tabs");
+    throw new GoogleApiError("Failed to get sheet tabs", response.status);
   }
 
   const data = await response.json();
@@ -144,7 +159,7 @@ async function readSheetData(accessToken: string, spreadsheetId: string, range: 
   if (!response.ok) {
     const error = await response.text();
     console.error("Sheets API error:", error);
-    throw new Error("Failed to read sheet data");
+    throw new GoogleApiError("Failed to read sheet data", response.status);
   }
 
   const data = await response.json();
@@ -201,75 +216,69 @@ serve(async (req) => {
     // Check for Google token passed directly via header
     const googleToken = req.headers.get("x-google-token");
     const shareToken = req.headers.get("x-share-token");
-    let accessToken: string;
 
-    if (googleToken) {
-      // Use token passed directly from frontend
-      console.log("Using Google token from header");
-      accessToken = googleToken;
-    } else {
-      // Create Supabase client
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const supabase = createClient(supabaseUrl, supabaseKey);
+    // Create Supabase client (sempre necessário: identificar o dono do projeto
+    // e permitir renovar o token do Google se o x-google-token estiver expirado)
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
-      let ownerUserId: string | null = null;
+    let ownerUserId: string | null = null;
 
-      if (shareToken) {
-        console.log("Using share token for authentication");
-        const { data: tokenData, error: tokenError } = await supabase
-          .from("share_tokens")
-          .select("project_id, is_active, expires_at")
-          .eq("token", shareToken)
-          .single();
+    if (shareToken) {
+      console.log("Using share token for authentication");
+      const { data: tokenData, error: tokenError } = await supabase
+        .from("share_tokens")
+        .select("project_id, is_active, expires_at")
+        .eq("token", shareToken)
+        .single();
 
-        if (tokenError || !tokenData || !tokenData.is_active) {
-          console.error("Invalid or inactive share token");
-          return new Response(JSON.stringify({ error: "Invalid share token" }), {
-            status: 401,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        // Check expiry
-        if (tokenData.expires_at && new Date(tokenData.expires_at) < new Date()) {
-          return new Response(JSON.stringify({ error: "Share token expired" }), {
-            status: 401,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        // Get project owner
-        const { data: project, error: projectError } = await supabase
-          .from("projects")
-          .select("user_id")
-          .eq("id", tokenData.project_id)
-          .single();
-
-        if (projectError || !project) {
-          throw new Error("Project owner not found");
-        }
-        ownerUserId = project.user_id;
-
-      } else {
-        // Fallback: try to get refresh token from profiles for the logged in user
-        console.log("No Google token or share token, trying refresh token from profiles");
-
-        // Get user from JWT
-        const token = authHeader.replace("Bearer ", "");
-        const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-
-        if (userError || !user) {
-          console.error("Auth error:", userError);
-          return new Response(JSON.stringify({ error: "Invalid token" }), {
-            status: 401,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        ownerUserId = user.id;
+      if (tokenError || !tokenData || !tokenData.is_active) {
+        console.error("Invalid or inactive share token");
+        return new Response(JSON.stringify({ error: "Invalid share token" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
-      // Get user's Google refresh token from service_tokens
+      // Check expiry
+      if (tokenData.expires_at && new Date(tokenData.expires_at) < new Date()) {
+        return new Response(JSON.stringify({ error: "Share token expired" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Get project owner
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .select("user_id")
+        .eq("id", tokenData.project_id)
+        .single();
+
+      if (projectError || !project) {
+        throw new Error("Project owner not found");
+      }
+      ownerUserId = project.user_id;
+
+    } else {
+      // Get user from JWT
+      const token = authHeader.replace("Bearer ", "");
+      const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+
+      if (userError || !user) {
+        console.error("Auth error:", userError);
+        return new Response(JSON.stringify({ error: "Invalid token" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      ownerUserId = user.id;
+    }
+
+    // Renova o access token do Google a partir do refresh_token salvo em service_tokens.
+    // Usado tanto quando não há x-google-token quanto como fallback quando ele expirou.
+    async function getAccessTokenFromRefreshToken(): Promise<string> {
       const { data: tokenRow, error: tokenError } = await supabase
         .from("service_tokens")
         .select("refresh_token")
@@ -279,17 +288,19 @@ serve(async (req) => {
 
       if (tokenError || !tokenRow?.refresh_token) {
         console.error("No refresh token available");
-        return new Response(JSON.stringify({
-          error: "Google account not connected or refresh token missing.",
-          code: "GOOGLE_RECONNECT_REQUIRED"
-        }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        throw new GoogleReconnectRequiredError();
       }
 
-      // Get fresh access token
-      accessToken = await refreshAccessToken(tokenRow.refresh_token);
+      return await refreshAccessToken(tokenRow.refresh_token);
+    }
+
+    let accessToken: string;
+    if (googleToken) {
+      // Usa o token passado pelo frontend (provider_token da sessão) primeiro
+      console.log("Using Google token from header");
+      accessToken = googleToken;
+    } else {
+      accessToken = await getAccessTokenFromRefreshToken();
     }
 
 
@@ -298,25 +309,39 @@ serve(async (req) => {
     const { action, spreadsheetId, range } = body;
     console.log(`Parsed body: action=${action}, spreadsheetId=${spreadsheetId}, range=${range}`);
 
+    async function runAction(token: string) {
+      switch (action) {
+        case "list-spreadsheets":
+          return await listSpreadsheets(token);
+        case "get-sheets":
+          if (!spreadsheetId) {
+            throw new Error("spreadsheetId is required");
+          }
+          return await getSheetTabs(token, spreadsheetId);
+        case "read-data":
+          if (!spreadsheetId || !range) {
+            throw new Error("spreadsheetId and range are required");
+          }
+          return await readSheetData(token, spreadsheetId, range);
+        default:
+          throw new Error(`Unknown action: ${action}`);
+      }
+    }
+
     let result;
-    switch (action) {
-      case "list-spreadsheets":
-        result = await listSpreadsheets(accessToken);
-        break;
-      case "get-sheets":
-        if (!spreadsheetId) {
-          throw new Error("spreadsheetId is required");
-        }
-        result = await getSheetTabs(accessToken, spreadsheetId);
-        break;
-      case "read-data":
-        if (!spreadsheetId || !range) {
-          throw new Error("spreadsheetId and range are required");
-        }
-        result = await readSheetData(accessToken, spreadsheetId, range);
-        break;
-      default:
-        throw new Error(`Unknown action: ${action}`);
+    try {
+      result = await runAction(accessToken);
+    } catch (err) {
+      // O provider_token vindo do frontend expira (~1h) e nunca é renovado pelo
+      // SDK do Supabase sozinho. Se a API do Google recusar por 401, renova o
+      // access token via refresh_token salvo e tenta a ação de novo, uma vez.
+      if (googleToken && err instanceof GoogleApiError && err.status === 401) {
+        console.log("Google token from header expired, refreshing via stored refresh token");
+        accessToken = await getAccessTokenFromRefreshToken();
+        result = await runAction(accessToken);
+      } else {
+        throw err;
+      }
     }
 
     console.log(`Action ${action} completed successfully`);
@@ -327,6 +352,14 @@ serve(async (req) => {
 
   } catch (error) {
     console.error("Edge function error:", error);
+
+    if (error instanceof GoogleReconnectRequiredError) {
+      return new Response(JSON.stringify({ error: error.message, code: "GOOGLE_RECONNECT_REQUIRED" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

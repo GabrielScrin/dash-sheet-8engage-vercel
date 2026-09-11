@@ -108,6 +108,34 @@ A conexão Google Ads não tem UI de autorização OAuth. O `refresh_token` prec
 
 Secrets obrigatórias na Edge Function: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_DEVELOPER_TOKEN`.
 
+## Troubleshooting
+
+### Erro "GOOGLE_RECONNECT_REQUIRED" / "Token has been expired or revoked"
+
+O app usa **dois refresh tokens do Google separados**, guardados em tabelas diferentes, mas emitidos pelo **mesmo OAuth Client** (mesmo `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, já que `google-ads-api` cai para essas variáveis quando `GOOGLE_ADS_CLIENT_ID`/`SECRET` não estão setadas — ver `supabase/functions/google-ads-api/index.ts:70-77`):
+
+| Integração | Onde fica o refresh token | Como é renovado |
+|---|---|---|
+| Login / Google Sheets | `service_tokens` (por usuário) | Salvo no `AuthContext.tsx` (evento `SIGNED_IN`) ou em `src/pages/AuthCallback.tsx` (fluxo manual de callback) |
+| Google Ads | `project_google_ads_connections` (por projeto) | Salvo só via ação `callback` do `google-ads-api`, disparada pelo botão "Reconectar Google Ads" no wizard do projeto |
+
+**Causa raiz mais comum:** o usuário revoga o acesso do app em `myaccount.google.com/permissions` (passo necessário para forçar o Google a reemitir um refresh token quando o Sheets para de funcionar). Como as duas integrações compartilham o mesmo OAuth Client, revogar o acesso invalida **os dois refresh tokens ao mesmo tempo** — não só o do login. Resultado: o Sheets volta a funcionar após reconectar o login, mas o Google Ads passa a falhar com `"Token has been expired or revoked."` (erro vindo direto da API do Google, repassado em `refreshAccessToken()`).
+
+**Diagnóstico:**
+```sql
+-- login/Sheets
+select user_id, (refresh_token is not null) as tem_token, updated_at
+from service_tokens where provider = 'google';
+
+-- Google Ads (cuidado: updated_at é tocado por um trigger em QUALQUER update,
+-- incluindo a ação "validate" — não é prova de que o refresh_token foi renovado)
+select project_id, user_id, customer_name, updated_at from project_google_ads_connections;
+```
+
+**Correção:** as duas conexões precisam ser refeitas **separadamente** depois de uma revogação:
+1. Login/Sheets: logout + login de novo (ou botão "Reconectar Conta Google" que aparece no dashboard).
+2. Google Ads: na etapa de configuração do projeto (`/app/projects/:id/config`), clicar em "Reconectar Google Ads" — isso é um fluxo OAuth próprio (`action=authorize` → `action=callback` em `google-ads-api`), não é coberto pelo login geral.
+
 ## Variáveis de ambiente
 
 ```

@@ -931,109 +931,75 @@ Deno.serve(async (req) => {
         }>;
       }>;
 
+      // Wave 1: 13 queries independentes executadas em paralelo
+      const [
+        tsSettled,
+        campSettled,
+        reachSettled,
+        cpvSettled,
+        videoSettled,
+        activeViewSettled,
+        adsSettled,
+        adVideoSettled,
+        adActiveViewSettled,
+        videoAdsSettled,
+        fallbackVideoAdsSettled,
+        videoAssetsSettled,
+        adAssetViewSettled,
+      ] = await Promise.allSettled([
+        googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, { method: "POST", body: JSON.stringify({ query: timeseriesQuery }) }),
+        googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, { method: "POST", body: JSON.stringify({ query: campaignsQuery }) }),
+        googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, { method: "POST", body: JSON.stringify({ query: reachCampaignsQuery }) }),
+        googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, { method: "POST", body: JSON.stringify({ query: cpvCampaignsQuery }) }),
+        googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, { method: "POST", body: JSON.stringify({ query: videoCampaignsQuery }) }),
+        googleAdsRequest<BatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, { method: "POST", body: JSON.stringify({ query: activeViewCampaignsQuery }) }),
+        googleAdsRequest<AdsBatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, { method: "POST", body: JSON.stringify({ query: adsQuery }) }),
+        googleAdsRequest<AdVideoMetricsBatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, { method: "POST", body: JSON.stringify({ query: adVideoMetricsQuery }) }),
+        googleAdsRequest<AdVideoMetricsBatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, { method: "POST", body: JSON.stringify({ query: adActiveViewMetricsQuery }) }),
+        googleAdsRequest<VideoAdsBatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, { method: "POST", body: JSON.stringify({ query: videoAdsQuery }) }),
+        googleAdsRequest<VideoAdAssetsFallbackBatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, { method: "POST", body: JSON.stringify({ query: videoAdAssetsFallbackQuery }) }),
+        googleAdsRequest<VideoAssetBatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, { method: "POST", body: JSON.stringify({ query: videoAssetsQuery }) }),
+        googleAdsRequest<AdAssetViewVideosBatchResult>(accessToken, typedConnection, `/customers/${customerId}/googleAds:searchStream`, { method: "POST", body: JSON.stringify({ query: adAssetViewVideosQuery }) }),
+      ]);
+
+      // timeseries com fallback sequencial
       let tsRes: BatchResult = [];
       let timeseriesFallbackTotals: { spend: number; impressions: number; clicks: number; conversions: number } | null = null;
-      try {
-        tsRes = await googleAdsRequest<BatchResult>(
-          accessToken,
-          typedConnection,
-          `/customers/${customerId}/googleAds:searchStream`,
-          {
-            method: "POST",
-            body: JSON.stringify({ query: timeseriesQuery }),
-          },
-        );
-      } catch (error) {
-        console.error("Google Ads timeseries query failed, retrying aggregated insights query", error);
+      if (tsSettled.status === "fulfilled") {
+        tsRes = tsSettled.value;
+      } else {
+        console.error("Google Ads timeseries query failed, retrying aggregated insights query", tsSettled.reason);
         timeseriesFallbackTotals = await fetchInsights(accessToken, typedConnection, startDate, endDate);
       }
 
-      const campRes = await googleAdsRequest<BatchResult>(
-        accessToken,
-        typedConnection,
-        `/customers/${customerId}/googleAds:searchStream`,
-        {
-          method: "POST",
-          body: JSON.stringify({ query: campaignsQuery }),
-        },
-      );
+      if (campSettled.status === "rejected") throw campSettled.reason;
+      const campRes: BatchResult = campSettled.value;
 
       const optionalCampRes: BatchResult[] = [];
-      try {
-        optionalCampRes.push(await googleAdsRequest<BatchResult>(
-          accessToken,
-          typedConnection,
-          `/customers/${customerId}/googleAds:searchStream`,
-          {
-            method: "POST",
-            body: JSON.stringify({ query: reachCampaignsQuery }),
-          },
-        ));
-      } catch (error) {
-        console.error("Google Ads reach campaigns query failed", error);
-      }
-      try {
-        optionalCampRes.push(await googleAdsRequest<BatchResult>(
-          accessToken,
-          typedConnection,
-          `/customers/${customerId}/googleAds:searchStream`,
-          {
-            method: "POST",
-            body: JSON.stringify({ query: cpvCampaignsQuery }),
-          },
-        ));
-      } catch (error) {
-        console.error("Google Ads CPV campaigns query failed", error);
-      }
-      try {
-        optionalCampRes.push(await googleAdsRequest<BatchResult>(
-          accessToken,
-          typedConnection,
-          `/customers/${customerId}/googleAds:searchStream`,
-          {
-            method: "POST",
-            body: JSON.stringify({ query: videoCampaignsQuery }),
-          },
-        ));
-      } catch (error) {
-        console.error("Google Ads video campaigns query failed", error);
-      }
-      try {
-        optionalCampRes.push(await googleAdsRequest<BatchResult>(
-          accessToken,
-          typedConnection,
-          `/customers/${customerId}/googleAds:searchStream`,
-          {
-            method: "POST",
-            body: JSON.stringify({ query: activeViewCampaignsQuery }),
-          },
-        ));
-      } catch (error) {
-        console.error("Google Ads active view campaigns query failed", error);
+      for (const [label, settled] of [
+        ["reach campaigns", reachSettled],
+        ["CPV campaigns", cpvSettled],
+        ["video campaigns", videoSettled],
+        ["active view campaigns", activeViewSettled],
+      ] as [string, PromiseSettledResult<BatchResult>][]) {
+        if (settled.status === "fulfilled") {
+          optionalCampRes.push(settled.value);
+        } else {
+          console.error(`Google Ads ${label} query failed`, settled.reason);
+        }
       }
 
       let adsRes: AdsBatchResult = [];
-      try {
-        adsRes = await googleAdsRequest<AdsBatchResult>(
-          accessToken,
-          typedConnection,
-          `/customers/${customerId}/googleAds:searchStream`,
-          {
-            method: "POST",
-            body: JSON.stringify({ query: adsQuery }),
-          },
-        );
-      } catch (error) {
-        console.error("Google Ads ads query failed", error);
+      if (adsSettled.status === "fulfilled") {
+        adsRes = adsSettled.value;
+      } else {
+        console.error("Google Ads ads query failed", adsSettled.reason);
         try {
           adsRes = await googleAdsRequest<AdsBatchResult>(
             accessToken,
             typedConnection,
             `/customers/${customerId}/googleAds:searchStream`,
-            {
-              method: "POST",
-              body: JSON.stringify({ query: adsFallbackQuery }),
-            },
+            { method: "POST", body: JSON.stringify({ query: adsFallbackQuery }) },
           );
         } catch (fallbackError) {
           console.error("Google Ads ads fallback query failed", fallbackError);
@@ -1041,78 +1007,38 @@ Deno.serve(async (req) => {
       }
 
       let adVideoMetricsRes: AdVideoMetricsBatchResult = [];
-      try {
-        adVideoMetricsRes = await googleAdsRequest<AdVideoMetricsBatchResult>(
-          accessToken,
-          typedConnection,
-          `/customers/${customerId}/googleAds:searchStream`,
-          {
-            method: "POST",
-            body: JSON.stringify({ query: adVideoMetricsQuery }),
-          },
-        );
-      } catch (error) {
-        console.error("Google Ads ad video metrics query failed", error);
+      if (adVideoSettled.status === "fulfilled") {
+        adVideoMetricsRes = adVideoSettled.value;
+      } else {
+        console.error("Google Ads ad video metrics query failed", adVideoSettled.reason);
       }
 
       let adActiveViewMetricsRes: AdVideoMetricsBatchResult = [];
-      try {
-        adActiveViewMetricsRes = await googleAdsRequest<AdVideoMetricsBatchResult>(
-          accessToken,
-          typedConnection,
-          `/customers/${customerId}/googleAds:searchStream`,
-          {
-            method: "POST",
-            body: JSON.stringify({ query: adActiveViewMetricsQuery }),
-          },
-        );
-      } catch (error) {
-        console.error("Google Ads ad active view metrics query failed", error);
+      if (adActiveViewSettled.status === "fulfilled") {
+        adActiveViewMetricsRes = adActiveViewSettled.value;
+      } else {
+        console.error("Google Ads ad active view metrics query failed", adActiveViewSettled.reason);
       }
 
       let videoAdsRes: VideoAdsBatchResult = [];
-      try {
-        videoAdsRes = await googleAdsRequest<VideoAdsBatchResult>(
-          accessToken,
-          typedConnection,
-          `/customers/${customerId}/googleAds:searchStream`,
-          {
-            method: "POST",
-            body: JSON.stringify({ query: videoAdsQuery }),
-          },
-        );
-      } catch (error) {
-        console.error("Google Ads video ads query failed", error);
+      if (videoAdsSettled.status === "fulfilled") {
+        videoAdsRes = videoAdsSettled.value;
+      } else {
+        console.error("Google Ads video ads query failed", videoAdsSettled.reason);
       }
 
       let fallbackVideoAdsRes: VideoAdAssetsFallbackBatchResult = [];
-      try {
-        fallbackVideoAdsRes = await googleAdsRequest<VideoAdAssetsFallbackBatchResult>(
-          accessToken,
-          typedConnection,
-          `/customers/${customerId}/googleAds:searchStream`,
-          {
-            method: "POST",
-            body: JSON.stringify({ query: videoAdAssetsFallbackQuery }),
-          },
-        );
-      } catch (error) {
-        console.error("Google Ads video asset fallback query failed", error);
+      if (fallbackVideoAdsSettled.status === "fulfilled") {
+        fallbackVideoAdsRes = fallbackVideoAdsSettled.value;
+      } else {
+        console.error("Google Ads video asset fallback query failed", fallbackVideoAdsSettled.reason);
       }
 
+      // Constrói videoAssetMap com os resultados da Wave 1
       let videoAssetMap = new Map<string, { title: string; youtubeVideoId: string; youtubeUrl: string; thumbnailUrl: string }>();
       const videoAssetByNormalizedTitle = new Map<string, { title: string; youtubeVideoId: string; youtubeUrl: string; thumbnailUrl: string }>();
-      try {
-        const videoAssetsRes = await googleAdsRequest<VideoAssetBatchResult>(
-          accessToken,
-          typedConnection,
-          `/customers/${customerId}/googleAds:searchStream`,
-          {
-            method: "POST",
-            body: JSON.stringify({ query: videoAssetsQuery }),
-          },
-        );
-        for (const batch of (Array.isArray(videoAssetsRes) ? videoAssetsRes : [videoAssetsRes])) {
+      if (videoAssetsSettled.status === "fulfilled") {
+        for (const batch of (Array.isArray(videoAssetsSettled.value) ? videoAssetsSettled.value : [videoAssetsSettled.value])) {
           for (const result of (batch.results || [])) {
             const resourceName = String(result.asset?.resourceName || "");
             const youtubeVideoId = String(result.asset?.youtubeVideoAsset?.youtubeVideoId || "");
@@ -1130,8 +1056,8 @@ Deno.serve(async (req) => {
             }
           }
         }
-      } catch (error) {
-        console.error("Google Ads asset lookup for videos failed", error);
+      } else {
+        console.error("Google Ads asset lookup for videos failed", videoAssetsSettled.reason);
       }
 
       const adCreativeDetails = new Map<string, {
@@ -1194,38 +1120,37 @@ Deno.serve(async (req) => {
         });
       };
 
-      for (const query of [videoResponsiveAdAssetsQuery, demandGenVideoAdDetailsQuery]) {
-        try {
-          const detailsRes = await googleAdsRequest<AdCreativeDetailsBatchResult>(
-            accessToken,
-            typedConnection,
-            `/customers/${customerId}/googleAds:searchStream`,
-            {
-              method: "POST",
-              body: JSON.stringify({ query }),
-            },
-          );
+      // Wave 2: queries que dependem de videoAssetMap, em paralelo
+      const [videoResponsiveSettled, demandGenSettled] = await Promise.allSettled([
+        googleAdsRequest<AdCreativeDetailsBatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          { method: "POST", body: JSON.stringify({ query: videoResponsiveAdAssetsQuery }) },
+        ),
+        googleAdsRequest<AdCreativeDetailsBatchResult>(
+          accessToken,
+          typedConnection,
+          `/customers/${customerId}/googleAds:searchStream`,
+          { method: "POST", body: JSON.stringify({ query: demandGenVideoAdDetailsQuery }) },
+        ),
+      ]);
+
+      for (const settled of [videoResponsiveSettled, demandGenSettled]) {
+        if (settled.status === "fulfilled") {
+          const detailsRes = settled.value;
           for (const batch of (Array.isArray(detailsRes) ? detailsRes : [detailsRes])) {
             for (const result of (batch.results || [])) {
               readAdCreativeDetails(result);
             }
           }
-        } catch (error) {
-          console.error("Google Ads ad creative details query failed", error);
+        } else {
+          console.error("Google Ads ad creative details query failed", settled.reason);
         }
       }
 
-      try {
-        const assetViewRes = await googleAdsRequest<AdAssetViewVideosBatchResult>(
-          accessToken,
-          typedConnection,
-          `/customers/${customerId}/googleAds:searchStream`,
-          {
-            method: "POST",
-            body: JSON.stringify({ query: adAssetViewVideosQuery }),
-          },
-        );
-        for (const batch of (Array.isArray(assetViewRes) ? assetViewRes : [assetViewRes])) {
+      if (adAssetViewSettled.status === "fulfilled") {
+        for (const batch of (Array.isArray(adAssetViewSettled.value) ? adAssetViewSettled.value : [adAssetViewSettled.value])) {
           for (const result of (batch.results || [])) {
             const adId = String(result.adGroupAd?.ad?.id || "");
             const youtubeVideoId = String(result.asset?.youtubeVideoAsset?.youtubeVideoId || "");
@@ -1239,8 +1164,8 @@ Deno.serve(async (req) => {
             });
           }
         }
-      } catch (error) {
-        console.error("Google Ads ad asset view video query failed", error);
+      } else {
+        console.error("Google Ads ad asset view video query failed", adAssetViewSettled.reason);
       }
 
       if (!videoAdsRes.length && fallbackVideoAdsRes.length) {
