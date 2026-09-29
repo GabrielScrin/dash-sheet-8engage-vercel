@@ -5149,11 +5149,13 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                       value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalReach || 0) : (sheetDistributionData?.totalReach || 0)}
                       format="number"
                     />
-                    <BigNumberCard
-                      label="Impressoes"
-                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalImpressions || 0) : (sheetDistributionData?.totalImpressions || 0)}
-                      format="number"
-                    />
+                    {(project?.source_type === 'meta_ads' || Boolean(distributionImpressionsColumnKey)) && (
+                      <BigNumberCard
+                        label="Impressoes"
+                        value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalImpressions || 0) : (sheetDistributionData?.totalImpressions || 0)}
+                        format="number"
+                      />
+                    )}
                     <BigNumberCard
                       label="Frequencia"
                       value={project?.source_type === 'meta_ads' ? (metaDistributionData?.frequency || 0) : (sheetDistributionData?.frequency || 0)}
@@ -5174,11 +5176,13 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                       value={project?.source_type === 'meta_ads' ? (metaDistributionData?.ctr || 0) : (sheetDistributionData?.ctr || 0)}
                       format="percentage"
                     />
-                    <BigNumberCard
-                      label="Seguidores"
-                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.followers || 0) : (sheetDistributionData?.followersGained || 0)}
-                      format="number"
-                    />
+                    {(project?.source_type === 'meta_ads' || Boolean(distributionFollowersColumnKey)) && (
+                      <BigNumberCard
+                        label="Seguidores"
+                        value={project?.source_type === 'meta_ads' ? (metaDistributionData?.followers || 0) : (sheetDistributionData?.followersGained || 0)}
+                        format="number"
+                      />
+                    )}
                     <BigNumberCard
                       label="Custo por Seguidor"
                       value={project?.source_type === 'meta_ads' ? (metaDistributionData?.costPerFollower || 0) : (sheetDistributionData?.costPerFollower || 0)}
@@ -5395,11 +5399,13 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                       value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalReach || 0) : (sheetDistributionData?.totalReach || 0)}
                       format="number"
                     />
-                    <BigNumberCard
-                      label="Impressoes"
-                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalImpressions || 0) : (sheetDistributionData?.totalImpressions || 0)}
-                      format="number"
-                    />
+                    {(project?.source_type === 'meta_ads' || Boolean(distributionImpressionsColumnKey)) && (
+                      <BigNumberCard
+                        label="Impressoes"
+                        value={project?.source_type === 'meta_ads' ? (metaDistributionData?.totalImpressions || 0) : (sheetDistributionData?.totalImpressions || 0)}
+                        format="number"
+                      />
+                    )}
                     <BigNumberCard
                       label="Frequencia"
                       value={project?.source_type === 'meta_ads' ? (metaDistributionData?.frequency || 0) : (sheetDistributionData?.frequency || 0)}
@@ -5420,11 +5426,13 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                       value={project?.source_type === 'meta_ads' ? (metaDistributionData?.ctr || 0) : (sheetDistributionData?.ctr || 0)}
                       format="percentage"
                     />
-                    <BigNumberCard
-                      label="Seguidores"
-                      value={project?.source_type === 'meta_ads' ? (metaDistributionData?.followers || 0) : (sheetDistributionData?.followersGained || 0)}
-                      format="number"
-                    />
+                    {(project?.source_type === 'meta_ads' || Boolean(distributionFollowersColumnKey)) && (
+                      <BigNumberCard
+                        label="Seguidores"
+                        value={project?.source_type === 'meta_ads' ? (metaDistributionData?.followers || 0) : (sheetDistributionData?.followersGained || 0)}
+                        format="number"
+                      />
+                    )}
                     <BigNumberCard
                       label="Custo por Seguidor"
                       value={project?.source_type === 'meta_ads' ? (metaDistributionData?.costPerFollower || 0) : (sheetDistributionData?.costPerFollower || 0)}
