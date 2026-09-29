@@ -2324,15 +2324,19 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
           sheetCreativeDateColumnKey ||
           Object.keys(row).find((k) => k.toLowerCase().includes('data') || k.toLowerCase().includes('date')) ||
           null;
-        if (!dateKey || !row[dateKey]) return false;
-        const rowDate = parseSheetDateValue(row[dateKey]);
-        if (!rowDate) return false;
-        const from = new Date(dateRange.from);
-        from.setHours(0, 0, 0, 0);
-        const to = dateRange.to ? new Date(dateRange.to) : new Date();
-        to.setHours(23, 59, 59, 999);
-        if (rowDate < from) return false;
-        if (rowDate > to) return false;
+        // Abas de criativos "resumo" (uma linha por anúncio) não têm coluna de data.
+        // Nesse caso não há como filtrar por período, então mantemos a linha em vez de descartá-la.
+        if (dateKey && row[dateKey]) {
+          const rowDate = parseSheetDateValue(row[dateKey]);
+          if (rowDate) {
+            const from = new Date(dateRange.from);
+            from.setHours(0, 0, 0, 0);
+            const to = dateRange.to ? new Date(dateRange.to) : new Date();
+            to.setHours(23, 59, 59, 999);
+            if (rowDate < from) return false;
+            if (rowDate > to) return false;
+          }
+        }
       }
 
       if (selectedCreative) {
@@ -5608,6 +5612,23 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                 transition={{ duration: 0.2 }}
                 className="space-y-8"
               >
+                {project?.source_type !== 'meta_ads' && sheetCreativeData.length === 0 && (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Nenhum dado de criativo encontrado</AlertTitle>
+                    <AlertDescription className="space-y-1">
+                      <p>
+                        A aba <strong>{sheetCriativosName || 'de Criativos'}</strong> foi lida, mas não retornou linhas
+                        de criativo utilizáveis. Causas mais comuns:
+                      </p>
+                      <ul className="list-disc pl-5">
+                        <li>A aba só tem o cabeçalho e ainda não tem linhas de dados preenchidas abaixo dele.</li>
+                        <li>Nenhuma coluna de nome do anúncio foi reconhecida (esperado algo como "Anúncio", "Ad Name" ou "Nome do Anúncio").</li>
+                        <li>O período de datas selecionado no filtro do dashboard não cobre nenhuma linha dessa aba.</li>
+                      </ul>
+                    </AlertDescription>
+                  </Alert>
+                )}
                 {creativosSummarySection}
                 {creativosSection}
               </motion.div>
