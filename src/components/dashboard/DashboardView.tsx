@@ -39,6 +39,9 @@ interface MetaSourceConfig {
   sheet_criativos?: string | null;
   sheet_perpetuo_sos?: string | null;
   label_perpetua?: string | null;
+  label_distribuicao?: string | null;
+  label_consideracao?: string | null;
+  label_criativos?: string | null;
   [key: string]: unknown;
 }
 
@@ -4701,6 +4704,25 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     );
   };
 
+  // Seção de criativos reaproveitada tanto dentro da aba principal quanto na aba própria "Criativos".
+  const creativosSection = (
+    (project?.source_type === 'meta_ads' ? metaCreativeDataWithThumbs.length > 0 : sheetCreativeData.length > 0) && (
+      <section>
+        <h3 className="mb-4 text-lg font-semibold">Performance por Criativo</h3>
+        <CreativePerformanceTable
+          data={project?.source_type === 'meta_ads' ? (metaCreativeDataWithThumbs as any) : (sheetCreativeData as any)}
+          selectedCreative={selectedCreative}
+          onCreativeSelect={setSelectedCreative}
+          isMeta
+          metricOptions={project?.source_type === 'meta_ads' ? (metaWeeklyMetricOptions as any) : (sheetCreativeMetricOptions as any)}
+          defaultMetricColumns={project?.source_type === 'meta_ads' ? ['post_engagement', 'hook_rate', 'hold_rate', 'cpc', 'cost_per_result'] : sheetDefaultCreativeColumns}
+          metricColumns={project?.source_type === 'meta_ads' ? creativeMetricColumns : sheetCreativeMetricColumns}
+          onMetricColumnsChange={project?.source_type === 'meta_ads' ? setCreativeMetricColumns : setSheetCreativeMetricColumns}
+        />
+      </section>
+    )
+  );
+
   // Conteúdo compartilhado entre as abas "Sono e Rotina" e "Perpétuo SOS":
   // ambas usam os mesmos widgets, só mudam os dados por trás (sourceRows já
   // troca de planilha conforme activeTab).
@@ -4909,21 +4931,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       )}
 
       {/* Creative Performance */}
-      {(project?.source_type === 'meta_ads' ? metaCreativeDataWithThumbs.length > 0 : sheetCreativeData.length > 0) && (
-        <section>
-          <h3 className="mb-4 text-lg font-semibold">Performance por Criativo</h3>
-          <CreativePerformanceTable
-            data={project?.source_type === 'meta_ads' ? (metaCreativeDataWithThumbs as any) : (sheetCreativeData as any)}
-            selectedCreative={selectedCreative}
-            onCreativeSelect={setSelectedCreative}
-            isMeta
-            metricOptions={project?.source_type === 'meta_ads' ? (metaWeeklyMetricOptions as any) : (sheetCreativeMetricOptions as any)}
-            defaultMetricColumns={project?.source_type === 'meta_ads' ? ['post_engagement', 'hook_rate', 'hold_rate', 'cpc', 'cost_per_result'] : sheetDefaultCreativeColumns}
-            metricColumns={project?.source_type === 'meta_ads' ? creativeMetricColumns : sheetCreativeMetricColumns}
-            onMetricColumnsChange={project?.source_type === 'meta_ads' ? setCreativeMetricColumns : setSheetCreativeMetricColumns}
-          />
-        </section>
-      )}
+      {creativosSection}
 
       {/* Funnel */}
       {(project?.source_type === 'meta_ads' ? metaFunnelSteps.length > 0 : processedData.funnelData.length > 0) && (
@@ -5053,11 +5061,12 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
-        <TabsList className={`grid w-full ${isGoogleSheetView ? 'max-w-lg grid-cols-3' : hasPerpetuoSosConfig ? 'max-w-xl grid-cols-4' : 'max-w-md grid-cols-3'}`}>
+        <TabsList className={`grid w-full ${isGoogleSheetView ? 'max-w-lg grid-cols-3' : hasPerpetuoSosConfig ? 'max-w-2xl grid-cols-5' : 'max-w-xl grid-cols-4'}`}>
           {!isGoogleSheetView && <TabsTrigger value="perpetua">{sourceConfig?.label_perpetua || 'Perpétuo'}</TabsTrigger>}
           {!isGoogleSheetView && hasPerpetuoSosConfig && <TabsTrigger value="perpetuo_sos">Perpétuo SOS</TabsTrigger>}
-          <TabsTrigger value="descoberta">Descoberta</TabsTrigger>
-          <TabsTrigger value="consideracao">Consideracao</TabsTrigger>
+          <TabsTrigger value="descoberta">{sourceConfig?.label_distribuicao || 'Descoberta'}</TabsTrigger>
+          <TabsTrigger value="consideracao">{sourceConfig?.label_consideracao || 'Consideracao'}</TabsTrigger>
+          {!isGoogleSheetView && <TabsTrigger value="criativos">{sourceConfig?.label_criativos || 'Criativos'}</TabsTrigger>}
           {isGoogleSheetView && (
             <TabsTrigger value="seguidores" className="gap-1.5">
               <Youtube className="h-3.5 w-3.5 text-red-500" />
@@ -5566,6 +5575,21 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
               {renderGoogleAdsConnectedCampaignSection()}
             </motion.div>
           </TabsContent>
+
+          {/* Aba Criativos - reaproveita a mesma seção usada dentro da aba principal */}
+          {!isGoogleSheetView && (
+            <TabsContent value="criativos" className="mt-6">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-8"
+              >
+                {creativosSection}
+              </motion.div>
+            </TabsContent>
+          )}
 
           {/* Aba Seguidores - YouTube Analytics */}
           {isGoogleSheetView && (

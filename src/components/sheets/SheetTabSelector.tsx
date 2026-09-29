@@ -28,6 +28,9 @@ interface SheetTabSelectorProps {
   selectedCriativos?: string | null;
   selectedPerpetuoSos?: string | null;
   selectedLabelPerpetua?: string | null;
+  selectedLabelDistribuicao?: string | null;
+  selectedLabelConsideracao?: string | null;
+  selectedLabelCriativos?: string | null;
   onSelect: (selection: {
     perpetua: string;
     distribuicao: string;
@@ -35,6 +38,9 @@ interface SheetTabSelectorProps {
     criativos: string;
     perpetuoSos?: string;
     labelPerpetua?: string;
+    labelDistribuicao?: string;
+    labelConsideracao?: string;
+    labelCriativos?: string;
   }) => void;
   onBack: () => void;
 }
@@ -48,6 +54,9 @@ export function SheetTabSelector({
   selectedCriativos = null,
   selectedPerpetuoSos = null,
   selectedLabelPerpetua = null,
+  selectedLabelDistribuicao = null,
+  selectedLabelConsideracao = null,
+  selectedLabelCriativos = null,
   onSelect,
   onBack
 }: SheetTabSelectorProps) {
@@ -60,6 +69,9 @@ export function SheetTabSelector({
   const [criativosTab, setCriativosTab] = useState<string>(selectedCriativos || '');
   const [perpetuoSosTab, setPerpetuoSosTab] = useState<string>(selectedPerpetuoSos || '');
   const [labelPerpetua, setLabelPerpetua] = useState<string>(selectedLabelPerpetua || '');
+  const [labelDistribuicao, setLabelDistribuicao] = useState<string>(selectedLabelDistribuicao || '');
+  const [labelConsideracao, setLabelConsideracao] = useState<string>(selectedLabelConsideracao || '');
+  const [labelCriativos, setLabelCriativos] = useState<string>(selectedLabelCriativos || '');
 
   useEffect(() => {
     const fetchTabs = async () => {
@@ -113,6 +125,18 @@ export function SheetTabSelector({
     setLabelPerpetua(selectedLabelPerpetua || '');
   }, [selectedLabelPerpetua]);
 
+  useEffect(() => {
+    setLabelDistribuicao(selectedLabelDistribuicao || '');
+  }, [selectedLabelDistribuicao]);
+
+  useEffect(() => {
+    setLabelConsideracao(selectedLabelConsideracao || '');
+  }, [selectedLabelConsideracao]);
+
+  useEffect(() => {
+    setLabelCriativos(selectedLabelCriativos || '');
+  }, [selectedLabelCriativos]);
+
   const handleConfirm = () => {
     if (!perpetuaTab || !distribuicaoTab || !consideracaoTab || !criativosTab) {
       toast({
@@ -130,6 +154,9 @@ export function SheetTabSelector({
       criativos: criativosTab,
       perpetuoSos: perpetuoSosTab || undefined,
       labelPerpetua: labelPerpetua.trim() || undefined,
+      labelDistribuicao: labelDistribuicao.trim() || undefined,
+      labelConsideracao: labelConsideracao.trim() || undefined,
+      labelCriativos: labelCriativos.trim() || undefined,
     });
   };
 
@@ -204,6 +231,12 @@ export function SheetTabSelector({
                     ))}
                   </SelectContent>
                 </Select>
+                <Input
+                  value={labelDistribuicao}
+                  onChange={(e) => setLabelDistribuicao(e.target.value)}
+                  placeholder="Rótulo exibido no dashboard (opcional, ex: Descoberta)"
+                  className="text-xs"
+                />
               </CardContent>
             </Card>
 
@@ -222,6 +255,12 @@ export function SheetTabSelector({
                     ))}
                   </SelectContent>
                 </Select>
+                <Input
+                  value={labelConsideracao}
+                  onChange={(e) => setLabelConsideracao(e.target.value)}
+                  placeholder="Rótulo exibido no dashboard (opcional, ex: Consideração)"
+                  className="text-xs"
+                />
               </CardContent>
             </Card>
 
@@ -240,6 +279,12 @@ export function SheetTabSelector({
                     ))}
                   </SelectContent>
                 </Select>
+                <Input
+                  value={labelCriativos}
+                  onChange={(e) => setLabelCriativos(e.target.value)}
+                  placeholder="Rótulo exibido no dashboard (opcional, ex: Criativos)"
+                  className="text-xs"
+                />
               </CardContent>
             </Card>
 

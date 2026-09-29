@@ -396,6 +396,9 @@ export default function ProjectConfig() {
     criativos,
     perpetuoSos,
     labelPerpetua,
+    labelDistribuicao,
+    labelConsideracao,
+    labelCriativos,
   }: {
     perpetua: string;
     distribuicao: string;
@@ -403,6 +406,9 @@ export default function ProjectConfig() {
     criativos: string;
     perpetuoSos?: string;
     labelPerpetua?: string;
+    labelDistribuicao?: string;
+    labelConsideracao?: string;
+    labelCriativos?: string;
   }) => {
     if (!project) return;
     try {
@@ -415,6 +421,9 @@ export default function ProjectConfig() {
         sheet_criativos: criativos,
         sheet_perpetuo_sos: perpetuoSos || null,
         label_perpetua: labelPerpetua || null,
+        label_distribuicao: labelDistribuicao || null,
+        label_consideracao: labelConsideracao || null,
+        label_criativos: labelCriativos || null,
       };
       const { error } = await supabase
         .from('projects')
@@ -945,6 +954,9 @@ export default function ProjectConfig() {
                   selectedCriativos={project.source_config?.sheet_criativos || project.sheet_names?.[3] || project.sheet_names?.[2] || project.sheet_names?.[1] || project.sheet_names?.[0] || null}
                   selectedPerpetuoSos={project.source_config?.sheet_perpetuo_sos || null}
                   selectedLabelPerpetua={project.source_config?.label_perpetua || null}
+                  selectedLabelDistribuicao={project.source_config?.label_distribuicao || null}
+                  selectedLabelConsideracao={project.source_config?.label_consideracao || null}
+                  selectedLabelCriativos={project.source_config?.label_criativos || null}
                   onSelect={handleTabsSelect}
                   onBack={() => setCurrentStep(1)}
                 />
