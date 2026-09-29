@@ -4704,6 +4704,28 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     );
   };
 
+  // Totais agregados pra aba própria "Criativos" (não existem em outro lugar do componente).
+  const creativosTotalInvestimento = creativeInvestmentMetricKey
+    ? sheetCreativeData.reduce((sum, item) => sum + Number((item as Record<string, unknown>)[creativeInvestmentMetricKey] ?? 0), 0)
+    : 0;
+  const creativosTotalVendas = creativePurchasesMetricKey
+    ? sheetCreativeData.reduce((sum, item) => sum + Number((item as Record<string, unknown>)[creativePurchasesMetricKey] ?? 0), 0)
+    : 0;
+  const creativosTotalImpressoes = creativeImpressionsMetricKey
+    ? sheetCreativeData.reduce((sum, item) => sum + Number((item as Record<string, unknown>)[creativeImpressionsMetricKey] ?? 0), 0)
+    : 0;
+  const creativosCpaMedio = creativosTotalVendas > 0 ? creativosTotalInvestimento / creativosTotalVendas : 0;
+
+  const creativosSummarySection =
+    project?.source_type !== 'meta_ads' && sheetCreativeData.length > 0 ? (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <BigNumberCard label="Investimento Total" value={creativosTotalInvestimento} format="currency" />
+        <BigNumberCard label="Vendas" value={creativosTotalVendas} format="number" />
+        <BigNumberCard label="Impressões" value={creativosTotalImpressoes} format="number" />
+        <BigNumberCard label="CPA Médio" value={creativosCpaMedio} format="currency" />
+      </div>
+    ) : null;
+
   // Seção de criativos reaproveitada tanto dentro da aba principal quanto na aba própria "Criativos".
   const creativosSection = (
     (project?.source_type === 'meta_ads' ? metaCreativeDataWithThumbs.length > 0 : sheetCreativeData.length > 0) && (
@@ -5586,6 +5608,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                 transition={{ duration: 0.2 }}
                 className="space-y-8"
               >
+                {creativosSummarySection}
                 {creativosSection}
               </motion.div>
             </TabsContent>
