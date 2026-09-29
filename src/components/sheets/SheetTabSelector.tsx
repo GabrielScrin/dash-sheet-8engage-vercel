@@ -2,6 +2,7 @@
 import { Loader2, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -26,12 +27,14 @@ interface SheetTabSelectorProps {
   selectedConsideracao?: string | null;
   selectedCriativos?: string | null;
   selectedPerpetuoSos?: string | null;
+  selectedLabelPerpetua?: string | null;
   onSelect: (selection: {
     perpetua: string;
     distribuicao: string;
     consideracao: string;
     criativos: string;
     perpetuoSos?: string;
+    labelPerpetua?: string;
   }) => void;
   onBack: () => void;
 }
@@ -44,6 +47,7 @@ export function SheetTabSelector({
   selectedConsideracao = null,
   selectedCriativos = null,
   selectedPerpetuoSos = null,
+  selectedLabelPerpetua = null,
   onSelect,
   onBack
 }: SheetTabSelectorProps) {
@@ -55,6 +59,7 @@ export function SheetTabSelector({
   const [consideracaoTab, setConsideracaoTab] = useState<string>(selectedConsideracao || '');
   const [criativosTab, setCriativosTab] = useState<string>(selectedCriativos || '');
   const [perpetuoSosTab, setPerpetuoSosTab] = useState<string>(selectedPerpetuoSos || '');
+  const [labelPerpetua, setLabelPerpetua] = useState<string>(selectedLabelPerpetua || '');
 
   useEffect(() => {
     const fetchTabs = async () => {
@@ -104,11 +109,15 @@ export function SheetTabSelector({
     setPerpetuoSosTab(selectedPerpetuoSos || '');
   }, [selectedPerpetuoSos]);
 
+  useEffect(() => {
+    setLabelPerpetua(selectedLabelPerpetua || '');
+  }, [selectedLabelPerpetua]);
+
   const handleConfirm = () => {
     if (!perpetuaTab || !distribuicaoTab || !consideracaoTab || !criativosTab) {
       toast({
         title: 'Selecione as quatro abas',
-        description: 'Escolha uma aba para Perpetua, Descoberta, Consideracao e Criativos.',
+        description: 'Escolha uma aba para Perpetuo, Descoberta, Consideracao e Criativos.',
         variant: 'destructive',
       });
       return;
@@ -120,6 +129,7 @@ export function SheetTabSelector({
       consideracao: consideracaoTab,
       criativos: criativosTab,
       perpetuoSos: perpetuoSosTab || undefined,
+      labelPerpetua: labelPerpetua.trim() || undefined,
     });
   };
 
@@ -151,13 +161,13 @@ export function SheetTabSelector({
                 Escolha qual aba alimenta cada visualizacao principal do dashboard.
               </p>
             </div>
-            <div className="text-xs text-muted-foreground">Sono e Rotina + Descoberta + Consideracao + Criativos + Perpétuo SOS (opcional)</div>
+            <div className="text-xs text-muted-foreground">Perpétuo + Descoberta + Consideracao + Criativos + Perpétuo SOS (opcional)</div>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Card>
               <CardContent className="p-4 space-y-2">
-                <p className="text-sm font-medium">Aba da visao Sono e Rotina</p>
+                <p className="text-sm font-medium">Aba principal (Perpétuo)</p>
                 <Select value={perpetuaTab} onValueChange={setPerpetuaTab}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione a aba" />
@@ -170,6 +180,12 @@ export function SheetTabSelector({
                     ))}
                   </SelectContent>
                 </Select>
+                <Input
+                  value={labelPerpetua}
+                  onChange={(e) => setLabelPerpetua(e.target.value)}
+                  placeholder="Rótulo exibido no dashboard (opcional, ex: Perpétuo)"
+                  className="text-xs"
+                />
               </CardContent>
             </Card>
 

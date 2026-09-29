@@ -38,6 +38,7 @@ interface MetaSourceConfig {
   sheet_consideracao?: string | null;
   sheet_criativos?: string | null;
   sheet_perpetuo_sos?: string | null;
+  label_perpetua?: string | null;
   [key: string]: unknown;
 }
 
@@ -5053,7 +5054,7 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
         <TabsList className={`grid w-full ${isGoogleSheetView ? 'max-w-lg grid-cols-3' : hasPerpetuoSosConfig ? 'max-w-xl grid-cols-4' : 'max-w-md grid-cols-3'}`}>
-          {!isGoogleSheetView && <TabsTrigger value="perpetua">Sono e Rotina</TabsTrigger>}
+          {!isGoogleSheetView && <TabsTrigger value="perpetua">{sourceConfig?.label_perpetua || 'Perpétuo'}</TabsTrigger>}
           {!isGoogleSheetView && hasPerpetuoSosConfig && <TabsTrigger value="perpetuo_sos">Perpétuo SOS</TabsTrigger>}
           <TabsTrigger value="descoberta">Descoberta</TabsTrigger>
           <TabsTrigger value="consideracao">Consideracao</TabsTrigger>
