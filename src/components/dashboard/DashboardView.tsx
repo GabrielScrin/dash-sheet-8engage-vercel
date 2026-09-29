@@ -1354,6 +1354,35 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       ]),
     [distributionSourceRows],
   );
+  const distributionLandingPageViewColumnKey = useMemo(
+    () =>
+      findColumnKey(distributionSourceRows as Array<Record<string, unknown>>, [
+        'action landing page view',
+        'landing page view',
+        'landing page views',
+        'lp view',
+        'visualizacao da pagina',
+        'visualizacoes da pagina',
+      ]),
+    [distributionSourceRows],
+  );
+  const distributionLeadsColumnKey = useMemo(
+    () =>
+      findColumnKey(distributionSourceRows as Array<Record<string, unknown>>, [
+        'action leads',
+        'leads',
+      ]),
+    [distributionSourceRows],
+  );
+  const distributionCostPerLeadColumnKey = useMemo(
+    () =>
+      findColumnKey(distributionSourceRows as Array<Record<string, unknown>>, [
+        'cost per action leads',
+        'cost per lead',
+        'custo por lead',
+      ]),
+    [distributionSourceRows],
+  );
   const distributionProfileVisitsColumnKey = useMemo(
     () =>
       findColumnKey(distributionSourceRows as Array<Record<string, unknown>>, [
@@ -2541,6 +2570,10 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     let cpaFieldCount = 0;
     let totalCpm = 0;
     let cpmCount = 0;
+    let totalLandingPageViews = 0;
+    let totalLeads = 0;
+    let totalCostPerLeadFromField = 0;
+    let costPerLeadFieldCount = 0;
     const byCreative = new Map<string, { spend: number; revenue: number; reach: number; impressions: number; clicks: number; video3s: number; thruplay: number; followers: number; profileVisits: number; purchases: number; checkouts: number; metrics: Record<string, number>; metricCounts: Record<string, number>; link?: string; thumbnail?: string }>();
     const averageMetricKeys = new Set(
       distributionSheetMetricOptions
@@ -2570,6 +2603,9 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       const revenueFromRow = roas > 0 ? roas * spend : 0;
       const cpm = parseSheetNumber(distributionCpmColumnKey ? row?.[distributionCpmColumnKey] : 0);
       const clicks = parseSheetNumber(distributionLinkClicksColumnKey ? row?.[distributionLinkClicksColumnKey] : 0);
+      const landingPageViews = parseSheetNumber(distributionLandingPageViewColumnKey ? row?.[distributionLandingPageViewColumnKey] : 0);
+      const leads = parseSheetNumber(distributionLeadsColumnKey ? row?.[distributionLeadsColumnKey] : 0);
+      const costPerLeadFromField = parseSheetNumber(distributionCostPerLeadColumnKey ? row?.[distributionCostPerLeadColumnKey] : 0);
       const creativeName = String(distributionAdNameColumnKey ? row?.[distributionAdNameColumnKey] : '').trim();
       const creativeLink = String(distributionPermalinkColumnKey ? row?.[distributionPermalinkColumnKey] ?? '' : '').trim();
       const creativeThumbnail = String(distributionThumbnailColumnKey ? row?.[distributionThumbnailColumnKey] ?? '' : '').trim();
@@ -2584,6 +2620,12 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       totalSpend += spend;
       totalProfileVisits += profileVisits;
       totalLinkClicks += clicks;
+      totalLandingPageViews += landingPageViews;
+      totalLeads += leads;
+      if (costPerLeadFromField > 0) {
+        totalCostPerLeadFromField += costPerLeadFromField;
+        costPerLeadFieldCount += 1;
+      }
       if (frequencyFromField > 0) {
         totalFrequencyFromField += frequencyFromField;
         frequencyFieldCount += 1;
@@ -2680,6 +2722,12 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
       profileVisits: totalProfileVisits,
       checkouts: totalCheckouts,
       purchases: totalPurchases,
+      landingPageViews: totalLandingPageViews,
+      leads: totalLeads,
+      costPerLead:
+        totalLeads > 0
+          ? totalSpend / totalLeads
+          : (costPerLeadFieldCount > 0 ? totalCostPerLeadFromField / costPerLeadFieldCount : 0),
       roas:
         totalSpend > 0
           ? ((totalRevenueFromField > 0 ? totalRevenueFromField : totalRevenue) / totalSpend)
@@ -2752,6 +2800,9 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
     distributionFrequencyColumnKey,
     distributionImpressionsColumnKey,
     distributionLinkClicksColumnKey,
+    distributionLandingPageViewColumnKey,
+    distributionLeadsColumnKey,
+    distributionCostPerLeadColumnKey,
     distributionProfileVisitsColumnKey,
     distributionPlatformColumnKey,
     distributionPermalinkColumnKey,
@@ -5118,23 +5169,6 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
               transition={{ duration: 0.2 }}
               className="space-y-8"
             >
-              {project?.source_type !== 'meta_ads' && !isGoogleSheetView && (
-                <section>
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-lg font-semibold">Visao de Descoberta</h3>
-                    <Select value={distributionPhase} onValueChange={(value) => setDistributionPhase(value as any)}>
-                      <SelectTrigger className="w-[220px]">
-                        <SelectValue placeholder="Fase da campanha" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todas as fases</SelectItem>
-                        <SelectItem value="descoberta">Descoberta</SelectItem>
-                        <SelectItem value="consideracao">Consideração</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </section>
-              )}
               {!isGoogleSheetView && (
                 <section>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -5186,6 +5220,41 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                         label="CTR"
                         value={project?.source_type === 'meta_ads' ? (metaDistributionData?.ctr || 0) : (sheetDistributionData?.ctr || 0)}
                         format="percentage"
+                      />
+                    )}
+                    {Boolean(distributionLandingPageViewColumnKey) && (
+                      <BigNumberCard
+                        label="Visualizações da Página"
+                        value={sheetDistributionData?.landingPageViews || 0}
+                        format="number"
+                      />
+                    )}
+                    {Boolean(distributionCheckoutColumnKey) && (
+                      <BigNumberCard
+                        label="Início de Checkout"
+                        value={sheetDistributionData?.checkouts || 0}
+                        format="number"
+                      />
+                    )}
+                    {Boolean(distributionPurchasesColumnKey) && (
+                      <BigNumberCard
+                        label="Vendas"
+                        value={sheetDistributionData?.purchases || 0}
+                        format="number"
+                      />
+                    )}
+                    {Boolean(distributionLeadsColumnKey) && (
+                      <BigNumberCard
+                        label="Leads"
+                        value={sheetDistributionData?.leads || 0}
+                        format="number"
+                      />
+                    )}
+                    {Boolean(distributionLeadsColumnKey) && (
+                      <BigNumberCard
+                        label="Custo por Lead"
+                        value={sheetDistributionData?.costPerLead || 0}
+                        format="currency"
                       />
                     )}
                     {(project?.source_type === 'meta_ads' || Boolean(distributionFollowersColumnKey)) && (
@@ -5384,23 +5453,6 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
               transition={{ duration: 0.2 }}
               className="space-y-8"
             >
-              {project?.source_type !== 'meta_ads' && !isGoogleSheetView && (
-                <section>
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-lg font-semibold">Visao de Consideracao</h3>
-                    <Select value={distributionPhase} onValueChange={(value) => setDistributionPhase(value as any)}>
-                      <SelectTrigger className="w-[220px]">
-                        <SelectValue placeholder="Fase da campanha" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todas as fases</SelectItem>
-                        <SelectItem value="descoberta">Descoberta</SelectItem>
-                        <SelectItem value="consideracao">Consideração</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </section>
-              )}
               {!isGoogleSheetView && (
                 <section>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -5452,6 +5504,41 @@ export function DashboardView({ projectId, isPreview = false, shareToken, initia
                         label="CTR"
                         value={project?.source_type === 'meta_ads' ? (metaDistributionData?.ctr || 0) : (sheetDistributionData?.ctr || 0)}
                         format="percentage"
+                      />
+                    )}
+                    {Boolean(distributionLandingPageViewColumnKey) && (
+                      <BigNumberCard
+                        label="Visualizações da Página"
+                        value={sheetDistributionData?.landingPageViews || 0}
+                        format="number"
+                      />
+                    )}
+                    {Boolean(distributionCheckoutColumnKey) && (
+                      <BigNumberCard
+                        label="Início de Checkout"
+                        value={sheetDistributionData?.checkouts || 0}
+                        format="number"
+                      />
+                    )}
+                    {Boolean(distributionPurchasesColumnKey) && (
+                      <BigNumberCard
+                        label="Vendas"
+                        value={sheetDistributionData?.purchases || 0}
+                        format="number"
+                      />
+                    )}
+                    {Boolean(distributionLeadsColumnKey) && (
+                      <BigNumberCard
+                        label="Leads"
+                        value={sheetDistributionData?.leads || 0}
+                        format="number"
+                      />
+                    )}
+                    {Boolean(distributionLeadsColumnKey) && (
+                      <BigNumberCard
+                        label="Custo por Lead"
+                        value={sheetDistributionData?.costPerLead || 0}
+                        format="currency"
                       />
                     )}
                     {(project?.source_type === 'meta_ads' || Boolean(distributionFollowersColumnKey)) && (
